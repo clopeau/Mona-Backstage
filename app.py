@@ -5,18 +5,18 @@ import json
 import os
 import urllib.parse
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Live Planner", layout="centered", page_icon="📅")
-DATA_FILE = "planning_db_v2.json"
+# --- CONFIGURATION DU BRANDING ---
+st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
+DATA_FILE = "mona_planning_db.json" # J'ai renommé le fichier de sauvegarde pour faire propre
 
 # --- FONCTIONS UTILITAIRES ---
 
 def load_data():
-    # Structure par défaut avec une liste d'équipe initiale
+    # Données par défaut avec une équipe fictive pour commencer
     default_data = {
         "semaine_prochaine": [], 
         "semaine_courante": [],
-        "equipe": ["Julie", "Sarah", "Marie", "Sophie"] # Liste par défaut
+        "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"] 
     }
     
     if not os.path.exists(DATA_FILE):
@@ -25,7 +25,6 @@ def load_data():
     try:
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
-            # S'assurer que la clé équipe existe (si mise à jour depuis v1)
             if "equipe" not in data:
                 data["equipe"] = default_data["equipe"]
             return data
@@ -49,26 +48,25 @@ def generer_slots_par_defaut(date_debut):
     for i, jour in enumerate(jours):
         date_str = current_date.strftime("%d/%m/%Y")
         
-        # Structure : elu_cam est maintenant une LISTE pour en mettre plusieurs
         base_slot = {
             "jour": jour, 
             "date": date_str, 
             "candidats_cam": [], 
             "candidats_voix": [], 
-            "elu_cam": [], # Liste vide pour plusieurs personnes
-            "elu_voix": None # Une seule personne (ou None)
+            "elu_cam": [], 
+            "elu_voix": None 
         }
 
-        if i < 5: # Lundi à Vendredi
+        if i < 5: # Lundi à Vendredi (12h et 18h30)
             s1 = base_slot.copy()
             s1.update({"id": f"{date_str}-12h", "heure": "12:00"})
             slots.append(s1)
             
             s2 = base_slot.copy()
-            s2.update({"id": f"{date_str}-18h30", "heure": "18:30", "elu_cam": [], "candidats_cam": [], "candidats_voix": []}) # Reset lists for copy safety
+            s2.update({"id": f"{date_str}-18h30", "heure": "18:30", "elu_cam": [], "candidats_cam": [], "candidats_voix": []})
             slots.append(s2)
             
-        elif i == 5: # Samedi
+        elif i == 5: # Samedi (10h)
             s3 = base_slot.copy()
             s3.update({"id": f"{date_str}-10h", "heure": "10:00", "elu_cam": [], "candidats_cam": [], "candidats_voix": []})
             slots.append(s3)
@@ -77,9 +75,11 @@ def generer_slots_par_defaut(date_debut):
     return slots
 
 def generer_lien_whatsapp(semaine_data):
-    text = "*📅 PLANNING LIVES SEMAINE PROCHAINE 📅*\n\n"
+    # En-tête personnalisé Mona Dress
+    text = "*👗 LIVE PLANNER - MONA DRESS 👗*\n"
+    text += "_Le planning de la semaine prochaine est prêt !_\n\n"
+    
     for slot in semaine_data:
-        # Gestion affichage multiple pour Caméra
         if slot['elu_cam']:
             cam_names = ", ".join(slot['elu_cam'])
         else:
@@ -87,25 +87,27 @@ def generer_lien_whatsapp(semaine_data):
             
         voix = slot['elu_voix'] if slot['elu_voix'] else "❓"
         
-        text += f"🔴 *{slot['jour']} {slot['date']} à {slot['heure']}*\n"
+        text += f"🗓️ *{slot['jour']} {slot['date']} à {slot['heure']}*\n"
         text += f"🎥 Cam: {cam_names}\n🎙️ Voix: {voix}\n\n"
     
-    text += "Merci la team ! 💪"
+    text += "Merci les filles ! ✨"
     encoded_text = urllib.parse.quote(text)
     return f"https://wa.me/?text={encoded_text}"
 
 # --- INTERFACE ---
 
 data = load_data()
-st.title("📱 Gestion Planning Live")
+
+# Titre Principal
+st.title("👗 Mona Backstage")
+st.caption("Gestion du planning des Lives")
 
 # MENU LATÉRAL
-st.sidebar.header("Connexion")
+st.sidebar.header("🔐 Connexion")
 user_role = st.sidebar.selectbox("Qui êtes-vous ?", ["Visiteur", "Intervenante", "Admin"])
 
 username = None
 if user_role == "Intervenante":
-    # Choix parmi la liste gérée par l'admin
     if data["equipe"]:
         username = st.sidebar.selectbox("Votre Prénom", data["equipe"])
     else:
@@ -119,11 +121,10 @@ if user_role == "Visiteur" or user_role == "Intervenante":
     key_data = "semaine_courante" if choix_semaine == "Semaine Courante" else "semaine_prochaine"
     
     if not data.get(key_data):
-        st.info("Planning non disponible pour le moment.")
+        st.info("⏳ Le planning n'est pas encore disponible.")
     else:
         for slot in data[key_data]:
             with st.container():
-                # Card style
                 st.markdown(f"#### {slot['jour']} {slot['date']}")
                 st.caption(f"⏰ {slot['heure']}")
                 
@@ -138,10 +139,10 @@ if user_role == "Visiteur" or user_role == "Intervenante":
 # --- ONGLET 2: DISPONIBILITÉS (Intervenantes) ---
 if user_role == "Intervenante" and username:
     st.header(f"👋 Hello {username}")
-    st.write("Cochez vos dispos pour la **Semaine Prochaine** :")
+    st.write("Tes dispos pour la **Semaine Prochaine** :")
     
     if not data.get("semaine_prochaine"):
-        st.error("L'admin n'a pas encore ouvert le planning.")
+        st.error("L'admin n'a pas encore ouvert les inscriptions.")
     else:
         with st.form("dispo_form"):
             slots_updated = data["semaine_prochaine"]
@@ -157,7 +158,7 @@ if user_role == "Intervenante" and username:
                 is_in_voix = username in slot['candidats_voix']
                 new_voix = c2.checkbox("Dispo Voix", value=is_in_voix, key=f"v_{slot['id']}")
                 
-                # Logique de mise à jour des listes candidates
+                # Logique
                 if new_cam and username not in slot['candidats_cam']:
                     slot['candidats_cam'].append(username)
                 elif not new_cam and username in slot['candidats_cam']:
@@ -168,30 +169,27 @@ if user_role == "Intervenante" and username:
                 elif not new_voix and username in slot['candidats_voix']:
                     slot['candidats_voix'].remove(username)
                 
-                st.write("") # Spacer
+                st.write("") 
 
-            submitted = st.form_submit_button("✅ Enregistrer mes disponibilités", use_container_width=True)
+            submitted = st.form_submit_button("✅ Enregistrer mes dispos", use_container_width=True)
             if submitted:
                 data["semaine_prochaine"] = slots_updated
                 save_data(data)
-                st.success("C'est enregistré !")
+                st.success("C'est noté !")
 
 # --- ONGLET 3: ADMIN ---
 if user_role == "Admin":
-    st.header("🔧 Espace Admin")
+    st.header("🔧 Backstage Admin")
     
     tab1, tab2, tab3, tab4 = st.tabs(["👥 Équipe", "📅 Création", "✅ Validation", "🚀 Publier"])
     
     # 1. GESTION ÉQUIPE
     with tab1:
-        st.subheader("Gérer les intervenantes")
-        
-        # Afficher l'équipe actuelle
+        st.subheader("Gérer la Team Mona")
         st.write("Membres actuels :")
-        st.write(", ".join(data["equipe"]))
+        st.info(", ".join(data["equipe"]))
         
         col_add, col_del = st.columns(2)
-        
         with col_add:
             new_member = st.text_input("Ajouter un prénom")
             if st.button("Ajouter"):
@@ -201,7 +199,7 @@ if user_role == "Admin":
                     st.rerun()
         
         with col_del:
-            del_member = st.selectbox("Supprimer quelqu'un", ["Choisir..."] + data["equipe"])
+            del_member = st.selectbox("Retirer quelqu'un", ["Choisir..."] + data["equipe"])
             if st.button("Supprimer"):
                 if del_member != "Choisir...":
                     data["equipe"].remove(del_member)
@@ -212,9 +210,9 @@ if user_role == "Admin":
     with tab2:
         st.subheader("Préparer semaine prochaine")
         next_monday = get_next_monday()
-        st.info(f"Semaine du Lundi {next_monday.strftime('%d/%m/%Y')}")
+        st.write(f"Semaine du Lundi {next_monday.strftime('%d/%m/%Y')}")
         
-        if st.button("1. Générer les créneaux standards"):
+        if st.button("✨ Générer les créneaux (Midi & Soir)"):
             data["semaine_prochaine"] = generer_slots_par_defaut(next_monday)
             save_data(data)
             st.success("Créneaux générés !")
@@ -226,38 +224,33 @@ if user_role == "Admin":
                 save_data(data)
                 st.rerun()
 
-    # 3. VALIDATION (ATTRIBUTION)
+    # 3. VALIDATION
     with tab3:
-        st.subheader("Attribuer les rôles")
+        st.subheader("Casting des Lives")
         if data.get("semaine_prochaine"):
             slots_to_edit = data["semaine_prochaine"]
             equipe_complete = data["equipe"]
             
             for i, slot in enumerate(slots_to_edit):
-                # On compte les candidats pour l'affichage du header
                 nb_cand = len(slot['candidats_cam']) + len(slot['candidats_voix'])
                 color_status = "🟢" if nb_cand > 0 else "🔴"
                 
-                with st.expander(f"{color_status} {slot['jour']} - {slot['heure']} ({nb_cand} dispos)"):
+                with st.expander(f"{color_status} {slot['jour']} - {slot['heure']} ({nb_cand} candidatures)"):
                     
-                    # MODIFICATION HEURE
                     col_h, col_x = st.columns([1, 3])
-                    new_time = col_h.text_input("Horaire", value=slot['heure'], key=f"t_{i}")
+                    new_time = col_h.text_input("Heure", value=slot['heure'], key=f"t_{i}")
                     slot['heure'] = new_time
                     
-                    # Affichage des disponibilités déclarées
                     if slot['candidats_cam']:
-                        st.caption(f"✋ Dispos Caméra : {', '.join(slot['candidats_cam'])}")
+                        st.caption(f"✋ Dispos Cam : {', '.join(slot['candidats_cam'])}")
                     else:
-                        st.caption("✋ Dispos Caméra : Personne")
+                        st.caption("✋ Dispos Cam : Personne")
                         
                     if slot['candidats_voix']:
                         st.caption(f"✋ Dispos Voix : {', '.join(slot['candidats_voix'])}")
                     
                     c1, c2 = st.columns(2)
                     
-                    # SÉLECTION CAMÉRA (MULTI-SELECT)
-                    # On pré-remplit avec ce qui est sauvegardé (elu_cam est une liste)
                     default_cam = [p for p in slot['elu_cam'] if p in equipe_complete]
                     selected_cam = c1.multiselect(
                         "🎥 Qui en Caméra ?", 
@@ -267,11 +260,8 @@ if user_role == "Admin":
                     )
                     slot['elu_cam'] = selected_cam
                     
-                    # SÉLECTION VOIX (SINGLE SELECT)
                     opts_voix = ["Personne"] + equipe_complete
-                    # On trouve l'index de l'élu actuel
                     idx_voix = opts_voix.index(slot['elu_voix']) if slot['elu_voix'] in opts_voix else 0
-                    
                     selected_voix = c2.selectbox(
                         "🎙️ Qui à la Voix ?", 
                         options=opts_voix, 
@@ -280,32 +270,32 @@ if user_role == "Admin":
                     )
                     slot['elu_voix'] = None if selected_voix == "Personne" else selected_voix
 
-            if st.button("💾 Sauvegarder le Planning Final"):
+            if st.button("💾 Sauvegarder le Casting"):
                 data["semaine_prochaine"] = slots_to_edit
                 save_data(data)
-                st.success("Planning mis à jour !")
+                st.success("Planning enregistré !")
         else:
-            st.warning("Rien à valider. Générez d'abord les créneaux.")
+            st.warning("Générez d'abord les créneaux.")
 
-    # 4. ACTIONS & WHATSAPP
+    # 4. DIFFUSION
     with tab4:
-        st.subheader("Diffusion")
+        st.subheader("📢 Communication")
         
         st.markdown("#### 1. WhatsApp")
         if data.get("semaine_prochaine"):
             link = generer_lien_whatsapp(data["semaine_prochaine"])
-            st.info("Cliquez ci-dessous pour envoyer le récap dans le groupe :")
-            st.markdown(f"### 👉 [Ouvrir WhatsApp]({link})")
+            st.info("Cliquez ci-dessous pour envoyer le récap au groupe 'Les filles' :")
+            st.markdown(f"### 👉 [Envoyer sur WhatsApp]({link})")
         else:
-            st.write("Pas de planning futur à envoyer.")
+            st.write("Pas de planning prêt.")
             
         st.divider()
         
-        st.markdown("#### 2. Publication Officielle")
-        st.write("Une fois envoyé sur WhatsApp, publiez le planning sur l'app pour que tout le monde voie la semaine en cours.")
-        if st.button("🚀 Rendre public (Passer en semaine courante)"):
+        st.markdown("#### 2. Publication App")
+        st.write("Rendre le planning visible pour tout le monde sur l'accueil.")
+        if st.button("🚀 Publier Officiellement"):
             data["semaine_courante"] = data["semaine_prochaine"]
             data["semaine_prochaine"] = [] 
             save_data(data)
             st.balloons()
-            st.success("C'est en ligne !")
+            st.success("Le planning est en ligne !")
