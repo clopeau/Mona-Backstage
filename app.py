@@ -47,7 +47,6 @@ def generer_structure_vide(lundi_date):
     
     for i, jour in enumerate(jours):
         d_str = curr.strftime("%d/%m/%Y")
-        
         # Midi
         actif_m = True if i < 6 else False
         heure_m = "10:00" if i == 5 else "12:00"
@@ -55,7 +54,6 @@ def generer_structure_vide(lundi_date):
             "id": f"{d_str}-matin", "jour": jour, "date": d_str, "heure": heure_m, "actif": actif_m,
             "candidats_cam": [], "candidats_voix": [], "elu_cam": [], "elu_voix": None, "type": "matin"
         })
-        
         # Soir
         actif_s = True if i < 5 else False
         slots.append({
@@ -68,7 +66,6 @@ def generer_structure_vide(lundi_date):
 def generer_lien_whatsapp(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
-        
     text = "*👗 LIVE PLANNER - MONA DRESS 👗*\n\n"
     for slot in slots_actifs:
         cam = ", ".join(slot['elu_cam']) if slot['elu_cam'] else "❓"
@@ -104,7 +101,7 @@ choix_semaines = {
     f"Dans 2 semaines ({monday_next_2.strftime('%d/%m')})": date_to_str(monday_next_2),
 }
 
-# --- LOGIQUE VISITEUR / INTERVENANTE ---
+# --- VISITEUR / INTERVENANTE ---
 if user_role in ["Visiteur", "Intervenante"]:
     st.header("📅 Planning")
     label_semaine = st.radio("Période :", list(choix_semaines.keys())[:2], horizontal=True, label_visibility="collapsed")
@@ -134,7 +131,6 @@ if user_role in ["Visiteur", "Intervenante"]:
                         if username not in slot['candidats_cam']: slot['candidats_cam'].append(username)
                     else:
                         if username in slot['candidats_cam']: slot['candidats_cam'].remove(username)
-                    
                     is_v = username in slot['candidats_voix']
                     if c2.checkbox("Voix", value=is_v, key=f"v_{slot['id']}"):
                         if username not in slot['candidats_voix']: slot['candidats_voix'].append(username)
@@ -145,13 +141,13 @@ if user_role in ["Visiteur", "Intervenante"]:
                     save_data(data)
                     st.success("C'est noté !")
 
-# --- LOGIQUE ADMIN ---
+# --- ADMIN ---
 if user_role == "Admin":
     st.header("🔧 Backstage Admin")
-    
     choix_admin = st.selectbox("Semaine cible :", list(choix_semaines.keys()))
     selected_week_key = choix_semaines[choix_admin]
     
+    # Chargement données
     if selected_week_key not in data["weeks"]:
         slots_current_work = generer_structure_vide(str_to_date(selected_week_key))
     else:
@@ -160,58 +156,80 @@ if user_role == "Admin":
     st.divider()
     t1, t2, t3, t4 = st.tabs(["🛠️ Structure", "🎬 Casting", "📢 Diffusion", "👥 Équipe"])
     
-    # TAB 1: STRUCTURE OPTIMISÉE MOBILE
+    # --- TAB 1 : STRUCTURE RÉACTIVE (SANS FORMULAIRE) ---
     with t1:
-        st.caption("Activez les créneaux (Switch) et réglez l'heure.")
+        st.caption("Activez les Switchs pour afficher/masquer l'heure.")
         
-        with st.form("structure_form"):
-            # On boucle par paire (Matin + Soir)
-            for i in range(0, len(slots_current_work), 2):
-                slot_m = slots_current_work[i]   # Matin
-                slot_s = slots_current_work[i+1] # Soir
-                
-                # CARTE DU JOUR (Cadre)
-                with st.container(border=True):
-                    st.markdown(f"**{slot_m['jour']}** {slot_m['date']}")
-                    
-                    # Colonnes compactes
-                    col_matin, col_soir = st.columns(2)
-                    
-                    # COLONNE MATIN
-                    with col_matin:
-                        # Switch (Toggle)
-                        act_m = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
-                        slot_m['actif'] = act_m
-                        if act_m:
-                            # Si actif : champ texte visible
-                            slot_m['heure'] = st.text_input("Heure M", value=slot_m['heure'], key=f"hm_{slot_m['id']}", label_visibility="collapsed")
-                        else:
-                            # Si inactif : texte gris
-                            st.caption("💤 Off")
-
-                    # COLONNE SOIR
-                    with col_soir:
-                        act_s = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
-                        slot_s['actif'] = act_s
-                        if act_s:
-                            slot_s['heure'] = st.text_input("Heure S", value=slot_s['heure'], key=f"hs_{slot_s['id']}", label_visibility="collapsed")
-                        else:
-                            st.caption("💤 Off")
+        # On boucle sans st.form pour que les Toggles soient réactifs
+        for i in range(0, len(slots_current_work), 2):
+            slot_m = slots_current_work[i]
+            slot_s = slots_current_work[i+1]
             
-            # Bouton de validation large
-            if st.form_submit_button("💾 Enregistrer la Structure", type="primary", use_container_width=True):
-                data["weeks"][selected_week_key] = slots_current_work
-                save_data(data)
-                st.success("Mise à jour effectuée !")
-                st.rerun()
+            with st.container(border=True):
+                st.markdown(f"**{slot_m['jour']}** {slot_m['date']}")
+                col_matin, col_soir = st.columns(2)
+                
+                # MATIN
+                with col_matin:
+                    # On utilise key unique pour garder l'état
+                    key_act_m = f"tg_{slot_m['id']}"
+                    key_hr_m = f"hm_{slot_m['id']}"
+                    
+                    # Le Toggle
+                    is_active_m = st.toggle("Midi", value=slot_m.get('actif', True), key=key_act_m)
+                    
+                    # Logique Visuelle immédiate
+                    if is_active_m:
+                        new_hr_m = st.text_input("Heure M", value=slot_m['heure'], key=key_hr_m, label_visibility="collapsed")
+                    else:
+                        st.caption("💤 Off")
 
-    # TAB 2: CASTING
+                # SOIR
+                with col_soir:
+                    key_act_s = f"tg_{slot_s['id']}"
+                    key_hr_s = f"hs_{slot_s['id']}"
+                    
+                    is_active_s = st.toggle("Soir", value=slot_s.get('actif', True), key=key_act_s)
+                    
+                    if is_active_s:
+                        new_hr_s = st.text_input("Heure S", value=slot_s['heure'], key=key_hr_s, label_visibility="collapsed")
+                    else:
+                        st.caption("💤 Off")
+
+        st.divider()
+        
+        # Bouton de sauvegarde MANUELLE en bas
+        if st.button("💾 Enregistrer la Structure", type="primary", use_container_width=True):
+            # C'est ici qu'on récupère toutes les valeurs affichées à l'écran
+            for slot in slots_current_work:
+                # On reconstruit les clés utilisées plus haut
+                k_act = f"tg_{slot['id']}"
+                
+                # Matin ou Soir, le code est le même, on regarde si la clé existe dans session_state
+                if k_act in st.session_state:
+                    slot['actif'] = st.session_state[k_act]
+                    
+                    if slot['actif']:
+                        # On cherche la clé de l'heure (Matin ou Soir on doit deviner le préfixe ou utiliser logique)
+                        # Astuce : on a utilisé "hm_" ou "hs_" selon le type défini dans generer_structure_vide
+                        prefix = "hm" if "matin" in slot['id'] else "hs"
+                        k_hr = f"{prefix}_{slot['id']}"
+                        if k_hr in st.session_state:
+                            slot['heure'] = st.session_state[k_hr]
+
+            data["weeks"][selected_week_key] = slots_current_work
+            save_data(data)
+            st.success("Structure sauvegardée !")
+            # Pas besoin de rerun ici car on est déjà à jour, mais on peut le faire pour confirmer visuellement
+            # st.rerun()
+
+    # --- TAB 2 : CASTING ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots:
             st.warning("Aucun live actif.")
         elif selected_week_key not in data["weeks"]:
-             st.warning("Enregistrez d'abord la structure.")
+             st.warning("Enregistrez d'abord la structure (onglet précédent).")
         else:
             for s in active_slots:
                 with st.expander(f"{s['jour']} {s['heure']} ({len(s['candidats_cam'])+len(s['candidats_voix'])})"):
@@ -226,9 +244,9 @@ if user_role == "Admin":
             
             if st.button("💾 Sauvegarder Casting", use_container_width=True):
                 save_data(data)
-                st.success("OK !")
+                st.success("Casting OK !")
 
-    # TAB 3: DIFFUSION
+    # --- TAB 3 : DIFFUSION ---
     with t3:
         if selected_week_key in data["weeks"]:
             link = generer_lien_whatsapp(data["weeks"][selected_week_key])
@@ -236,7 +254,7 @@ if user_role == "Admin":
         else:
             st.error("Sauvegardez structure.")
 
-    # TAB 4: ÉQUIPE
+    # --- TAB 4 : ÉQUIPE ---
     with t4:
         c1, c2 = st.columns(2)
         new = c1.text_input("Ajout")
