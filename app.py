@@ -5,17 +5,23 @@ import json
 import os
 import urllib.parse
 import extra_streamlit_components as stx
+import time
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
 
-# --- CSS / STYLE ---
+# --- CSS SIMPLIFIÉ (Pour mobile) ---
 st.markdown("""
     <style>
-    div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; align-items: center; }
-    div[data-testid="column"] button { padding: 0rem 0.5rem !important; min-height: 2.5rem; width: auto !important; }
-    div[data-testid="column"] p { font-size: 1.1rem; margin-bottom: 0px; }
+    /* Ajustement des boutons */
+    div[data-testid="column"] button {
+        width: 100% !important; /* Boutons pleine largeur sur mobile */
+    }
+    /* Espacement entre les éléments verticaux */
+    .block-container {
+        padding-top: 2rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -31,8 +37,7 @@ def str_to_date(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d")
 
 def format_titre_slot(slot):
-    """Uniformise l'affichage : Lundi 18:30 (24/11)"""
-    short_date = "/".join(slot['date'].split("/")[:2]) # "24/11/2025" -> "24/11"
+    short_date = "/".join(slot['date'].split("/")[:2])
     return f"**{slot['jour']} {slot['heure']}** ({short_date})"
 
 def load_data():
@@ -51,18 +56,13 @@ def load_data():
         except:
             data = default_data
     
-    # NETTOYAGE EQUIPE : Doublons + Tri Alphabétique
     if data.get("equipe"):
-        # set() supprime les doublons, sorted() trie
         data["equipe"] = sorted(list(set(data["equipe"])))
-        
     return data
 
 def save_data(data):
-    # On trie aussi avant de sauvegarder pour être sûr
     if data.get("equipe"):
         data["equipe"] = sorted(list(set(data["equipe"])))
-        
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, default=str)
 
@@ -84,13 +84,11 @@ def generer_lien_whatsapp(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
     
-    # Construction du texte ligne par ligne pour éviter les soucis d'encodage complexes
     lines = []
     lines.append("*👗 LIVE PLANNER - MONA DRESS 👗*")
     lines.append("")
     
     for slot in slots_actifs:
-        # Uniformisation affichage
         short_date = "/".join(slot['date'].split("/")[:2])
         header = f"🗓️ *{slot['jour']} {slot['heure']}* ({short_date})"
         
@@ -106,35 +104,40 @@ def generer_lien_whatsapp(slots):
         lines.append("")
     
     lines.append("Merci les filles ! ✨")
-    
-    full_text = "\n".join(lines)
-    return f"https://wa.me/?text={urllib.parse.quote(full_text)}"
+    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
 
-# --- INTERFACE ---
-
+# --- CHARGEMENT ---
 data = load_data()
-st.title("👗 Mona Backstage")
-
-# --- COOKIES ---
 cookie_manager = stx.CookieManager()
-cookie_user = cookie_manager.get(cookie="mona_artiste_name")
 
-st.sidebar.header("Loges")
-mode_view = st.sidebar.selectbox("Mode", ["Artiste", "Boss"])
+# --- GESTION UTILISATEUR & COOKIES ---
+# On récupère le cookie au démarrage
+cookie_user = cookie_manager.get(cookie="mona_artiste_name")
 current_artiste = None
 
+# Barre latérale toujours visible pour navigation
+st.sidebar.title("Mona Backstage")
+mode_view = st.sidebar.radio("Navigation", ["Artiste", "Boss"])
+
+# LOGIQUE DE DÉTECTION ARTISTE
+# Si on est en mode artiste, on essaie de trouver qui c'est
 if mode_view == "Artiste":
-    st.sidebar.markdown("---")
-    st.sidebar.write("👤 **Identification**")
-    team_list = ["Choisir..."] + data["equipe"]
-    default_index = team_list.index(cookie_user) if cookie_user in data["equipe"] else 0
-    selected_user = st.sidebar.selectbox("Je suis :", team_list, index=default_index)
-    if selected_user != "Choisir...":
-        current_artiste = selected_user
-        if selected_user != cookie_user:
-            cookie_manager.set("mona_artiste_name", selected_user, expires_at=datetime.now() + timedelta(days=30))
-    elif cookie_user and cookie_user in data["equipe"]:
+    # 1. Est-ce qu'on a déjà un cookie valide ?
+    if cookie_user and cookie_user in data["equipe"]:
         current_artiste = cookie_user
+    
+    # 2. Si non (ou si on veut changer), on affiche le sélecteur dans la sidebar aussi
+    # pour permettre de changer d'identité facilement
+    idx = data["equipe"].index(current_artiste) if current_artiste else 0
+    selected_sidebar = st.sidebar.selectbox("Identité actuelle :", data["equipe"], index=idx)
+    
+    # Si changement manuel dans la sidebar
+    if selected_sidebar != current_artiste:
+        current_artiste = selected_sidebar
+        cookie_manager.set("mona_artiste_name", selected_sidebar, expires_at=datetime.now() + timedelta(days=30))
+        # On force un petit reload pour être sûr
+        time.sleep(0.5)
+        st.rerun()
 
 # --- DATES ---
 today = datetime.now()
@@ -152,11 +155,25 @@ choix_semaines = {
 #              VUE ARTISTE
 # ==========================================
 if mode_view == "Artiste":
-    if not current_artiste:
-        st.info("👈 Veuillez sélectionner votre prénom dans le menu de gauche.")
-        st.stop()
     
-    st.header(f"👋 Hello {current_artiste}")
+    # --- PAGE DE CONNEXION (SI PAS IDENTIFIÉ) ---
+    if not current_artiste:
+        st.title("👋 Bienvenue !")
+        st.info("Pour commencer, dis-nous qui tu es :")
+        
+        # Grand sélecteur central (Plus ergonomique que sidebar au premier lancement)
+        user_choice = st.selectbox("Je suis :", ["Choisir..."] + data["equipe"])
+        
+        if user_choice != "Choisir...":
+            cookie_manager.set("mona_artiste_name", user_choice, expires_at=datetime.now() + timedelta(days=30))
+            st.success(f"Enchanté {user_choice} ! Chargement...")
+            time.sleep(1)
+            st.rerun()
+        
+        st.stop() # On arrête l'affichage ici tant qu'on n'a pas choisi
+
+    # --- PAGE PRINCIPALE ARTISTE ---
+    st.title(f"👋 Hello {current_artiste}")
     
     tab_visu, tab_voeux = st.tabs(["📅 Planning", "✨ Mes Vœux"])
     
@@ -171,21 +188,23 @@ if mode_view == "Artiste":
         else:
             for slot in slots_visibles:
                 with st.container(border=True):
-                    # Affichage Uniformisé
+                    # Layout vertical mobile
                     st.markdown(format_titre_slot(slot))
                     
                     l_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
                     l_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
                     cam_txt = ", ".join(l_cam) if l_cam else "..."
                     voix_txt = ", ".join(l_voix) if l_voix else "..."
-                    st.caption(f"🎥 {cam_txt} | 🎙️ {voix_txt}")
+                    
+                    st.write(f"🎥 **Cam:** {cam_txt}")
+                    st.write(f"🎙️ **Voix:** {voix_txt}")
 
     # --- TAB 2 : VŒUX ---
     with tab_voeux:
-        st.write("Cochez les créneaux où vous êtes disponible :")
+        st.write("Disponibilités :")
         weeks_to_show = [(date_to_str(monday_next), f"Semaine Prochaine"), (date_to_str(monday_next_2), f"Dans 2 semaines")]
         if not any(wk[0] in data["weeks"] for wk in weeks_to_show):
-            st.warning("⏳ Pas de créneaux ouverts pour l'instant.")
+            st.warning("⏳ Pas de créneaux ouverts.")
         else:
             with st.form("dispo_form"):
                 for wk_key, wk_label in weeks_to_show:
@@ -195,9 +214,7 @@ if mode_view == "Artiste":
                         slots_vis = [s for s in slots_target if s.get('actif', True)]
                         if not slots_vis: st.caption("Rien de prévu.")
                         for slot in slots_vis:
-                            # Affichage Uniformisé pour la case à cocher
-                            label_case = format_titre_slot(slot).replace("**", "") # On enlève le gras pour la checkbox
-                            
+                            label_case = format_titre_slot(slot).replace("**", "")
                             is_dispo = (current_artiste in slot['candidats_cam']) or (current_artiste in slot['candidats_voix'])
                             new_state = st.checkbox(label_case, value=is_dispo, key=f"d_{slot['id']}")
                             if new_state:
@@ -208,16 +225,16 @@ if mode_view == "Artiste":
                                 if current_artiste in slot['candidats_voix']: slot['candidats_voix'].remove(current_artiste)
                         st.divider()
 
-                if st.form_submit_button("✅ Envoyer mes disponibilités", use_container_width=True):
+                if st.form_submit_button("✅ Envoyer", use_container_width=True):
                     save_data(data)
                     st.balloons()
-                    st.success("Disponibilités envoyées au Boss !")
+                    st.success("Envoyé !")
 
 # ==========================================
 #              VUE BOSS
 # ==========================================
 elif mode_view == "Boss":
-    st.header("🕶️ Espace Boss")
+    st.title("🕶️ Espace Boss")
     
     choix_admin = st.selectbox("Semaine cible :", list(choix_semaines.keys()))
     selected_week_key = choix_semaines[choix_admin]
@@ -227,32 +244,36 @@ elif mode_view == "Boss":
     else:
         slots_current_work = data["weeks"][selected_week_key]
         
-    st.divider()
-    t1, t2, t3, t4 = st.tabs(["🛠️ Structure", "🎬 Casting", "📢 Diffusion", "👥 Équipe"])
+    t1, t2, t3, t4 = st.tabs(["🛠️ Structure", "🎬 Casting", "📢 Whatsapp", "👥 Équipe"])
     
-    # --- STRUCTURE ---
+    # --- STRUCTURE (Verticale) ---
     with t1:
-        st.caption("Activez les Switchs pour afficher/masquer l'heure.")
+        st.caption("Configurer les horaires")
         for i in range(0, len(slots_current_work), 2):
             slot_m = slots_current_work[i]
             slot_s = slots_current_work[i+1]
-            
-            # Titre du jour commun aux deux slots
             short_date = "/".join(slot_m['date'].split("/")[:2])
             
             with st.container(border=True):
                 st.markdown(f"**{slot_m['jour']}** ({short_date})")
-                col_matin, col_soir = st.columns(2)
-                with col_matin:
-                    is_active_m = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
-                    if is_active_m: st.text_input("Heure M", value=slot_m['heure'], key=f"hm_{slot_m['id']}", label_visibility="collapsed")
-                    else: st.caption("💤 Off")
-                with col_soir:
-                    is_active_s = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
-                    if is_active_s: st.text_input("Heure S", value=slot_s['heure'], key=f"hs_{slot_s['id']}", label_visibility="collapsed")
-                    else: st.caption("💤 Off")
+                
+                # MIDI
+                st.markdown("---")
+                is_active_m = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
+                if is_active_m: 
+                    st.text_input("Heure Midi", value=slot_m['heure'], key=f"hm_{slot_m['id']}")
+                else: 
+                    st.caption("💤 Off")
+                
+                # SOIR (En dessous)
+                st.markdown("---")
+                is_active_s = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
+                if is_active_s: 
+                    st.text_input("Heure Soir", value=slot_s['heure'], key=f"hs_{slot_s['id']}")
+                else: 
+                    st.caption("💤 Off")
 
-        if st.button("💾 Enregistrer la Structure", type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer Structure", type="primary", use_container_width=True):
             for slot in slots_current_work:
                 k_act = f"tg_{slot['id']}"
                 if k_act in st.session_state:
@@ -263,24 +284,28 @@ elif mode_view == "Boss":
                         if k_hr in st.session_state: slot['heure'] = st.session_state[k_hr]
             data["weeks"][selected_week_key] = slots_current_work
             save_data(data)
-            st.success("Structure sauvegardée !")
+            st.success("Sauvegardé !")
 
-    # --- CASTING ---
+    # --- CASTING (Vertical) ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
-        if not active_slots: st.warning("Aucun live actif.")
-        elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure d'abord.")
+        if not active_slots: st.warning("Activer d'abord des créneaux.")
+        elif selected_week_key not in data["weeks"]: st.warning("Sauvegarder la structure.")
         else:
             for s in active_slots:
-                # Affichage Uniformisé et OUVERT PAR DÉFAUT (expanded=True)
                 with st.expander(format_titre_slot(s) + f" - ({len(s['candidats_cam'])})", expanded=True):
-                    c1, c2 = st.columns(2)
-                    curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
-                    s['elu_cam'] = c1.multiselect("🎥 Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=f"mc_{s['id']}")
-                    st.caption(f"Dispos : {', '.join(s['candidats_cam'])}")
                     
+                    # SECTION CAMERA
+                    curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
+                    s['elu_cam'] = st.multiselect("🎥 Caméra", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=f"mc_{s['id']}")
+                    if s['candidats_cam']:
+                        st.caption(f"✋ Dispos: {', '.join(s['candidats_cam'])}")
+                    
+                    st.write("") # Espace
+                    
+                    # SECTION VOIX (En dessous)
                     curr_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
-                    s['elu_voix'] = c2.multiselect("🎙️ Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=f"mv_{s['id']}")
+                    s['elu_voix'] = st.multiselect("🎙️ Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=f"mv_{s['id']}")
             
             if st.button("💾 Sauvegarder Casting", use_container_width=True):
                 save_data(data)
@@ -291,25 +316,24 @@ elif mode_view == "Boss":
         if selected_week_key in data["weeks"]:
             link = generer_lien_whatsapp(data["weeks"][selected_week_key])
             st.markdown(f"### [👉 WhatsApp]({link})")
-        else: st.error("Structure non sauvegardée.")
+        else: st.error("Sauvegarder structure.")
 
-    # --- ÉQUIPE (TRIÉE & SANS DOUBLONS) ---
+    # --- ÉQUIPE (Vertical) ---
     with t4:
-        st.subheader("Gérer la Team")
+        st.subheader("Team")
         
+        # 1. FORMULAIRE VERTICAL
         with st.form("add_member", clear_on_submit=True):
-            c_in, c_bt = st.columns([3, 1])
-            new = c_in.text_input("Nom", placeholder="Nouveau...", label_visibility="collapsed")
-            if c_bt.form_submit_button("Ajouter", use_container_width=True):
+            new = st.text_input("Nouveau membre", placeholder="Prénom")
+            if st.form_submit_button("Ajouter", use_container_width=True):
                 if new:
-                    # Ajout, puis set/sort géré par load/save data
                     data["equipe"].append(new)
                     save_data(data)
                     st.rerun()
 
         st.markdown("---")
         
-        # Affichage (la liste est déjà triée grâce à load_data)
+        # 2. LISTE
         for i, member in enumerate(data["equipe"]):
             with st.container(border=True):
                 col_txt, col_act = st.columns([4, 1])
@@ -320,12 +344,11 @@ elif mode_view == "Boss":
                         st.session_state[f"confirm_del_{i}"] = True
                 
                 if st.session_state.get(f"confirm_del_{i}", False):
-                    st.markdown("Sûr ?")
-                    c_y, c_n = st.columns(2)
-                    if c_y.button("Oui", key=f"y_{i}", type="primary"):
+                    st.write("Supprimer ?")
+                    if st.button("Oui", key=f"y_{i}", type="primary", use_container_width=True):
                         data["equipe"].pop(i)
                         save_data(data)
                         st.rerun()
-                    if c_n.button("Non", key=f"n_{i}"):
+                    if st.button("Non", key=f"n_{i}", use_container_width=True):
                         st.session_state[f"confirm_del_{i}"] = False
                         st.rerun()
