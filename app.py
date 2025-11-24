@@ -10,30 +10,6 @@ import extra_streamlit_components as stx
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
 
-# --- CSS MAGIQUE (POUR FORCER L'ALIGNEMENT MOBILE) ---
-st.markdown("""
-    <style>
-    /* 1. Force les colonnes à rester sur la même ligne (ne pas empiler sur mobile) */
-    div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        align-items: center; /* Centre verticalement le bouton et le texte */
-    }
-    
-    /* 2. Réduit la taille du bouton poubelle */
-    div[data-testid="column"] button {
-        padding: 0rem 0.5rem !important;
-        min-height: 2.5rem;
-        width: auto !important; /* Empêche le bouton de prendre toute la largeur */
-    }
-    
-    /* 3. Ajuste le texte du nom pour qu'il soit bien aligné */
-    div[data-testid="column"] p {
-        font-size: 1.1rem;
-        margin-bottom: 0px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # --- FONCTIONS UTILITAIRES ---
 
 def get_monday(date_obj):
@@ -272,14 +248,15 @@ elif mode_view == "Boss":
             st.markdown(f"### [👉 WhatsApp]({link})")
         else: st.error("Structure non sauvegardée.")
 
-    # --- ÉQUIPE (CORRIGÉE & COMPACTE) ---
+    # --- ÉQUIPE (STABLE MOBILE VERSION) ---
     with t4:
-        st.subheader("Team")
+        st.subheader("Gérer la Team")
         
+        # 1. Ajout (Formulaire simple)
         with st.form("add_member", clear_on_submit=True):
-            c_input, c_btn = st.columns([4, 1])
-            new = c_input.text_input("Nom", placeholder="Nouveau...", label_visibility="collapsed")
-            if c_btn.form_submit_button("➕", use_container_width=True):
+            c_in, c_bt = st.columns([3, 1])
+            new = c_in.text_input("Nom", placeholder="Nouveau...", label_visibility="collapsed")
+            if c_bt.form_submit_button("Ajouter", use_container_width=True):
                 if new and new not in data["equipe"]:
                     data["equipe"].append(new)
                     save_data(data)
@@ -287,17 +264,28 @@ elif mode_view == "Boss":
 
         st.markdown("---")
         
-        # Liste ultra-compacte avec CSS (flex-wrap: nowrap)
+        # 2. Liste Carte avec Confirmation
         for i, member in enumerate(data["equipe"]):
-            # Ratio 1/5 pour "Poubelle" vs "Nom"
-            # Notez que nous n'utilisons PAS use_container_width=True sur le bouton pour qu'il reste petit
-            col_btn, col_txt = st.columns([1, 5])
-            
-            with col_btn:
-                if st.button("🗑", key=f"del_{i}"):
-                    data["equipe"].pop(i)
-                    save_data(data)
-                    st.rerun()
-            
-            with col_txt:
-                st.markdown(f"<div style='margin-top: 5px; font-weight: bold;'>{member}</div>", unsafe_allow_html=True)
+            # On utilise border=True pour faire une jolie carte
+            with st.container(border=True):
+                col_txt, col_act = st.columns([4, 1])
+                
+                with col_txt:
+                    st.markdown(f"**{member}**")
+                
+                with col_act:
+                    # Bouton Croix
+                    if st.button("❌", key=f"pre_del_{i}"):
+                        st.session_state[f"confirm_del_{i}"] = True
+                
+                # Zone de confirmation (apparaît seulement si on a cliqué sur la croix)
+                if st.session_state.get(f"confirm_del_{i}", False):
+                    st.markdown("⚠️ **Supprimer définitivement ?**")
+                    col_yes, col_no = st.columns(2)
+                    if col_yes.button("Oui", key=f"yes_{i}", type="primary"):
+                        data["equipe"].pop(i)
+                        save_data(data)
+                        st.rerun()
+                    if col_no.button("Non", key=f"no_{i}"):
+                        st.session_state[f"confirm_del_{i}"] = False
+                        st.rerun()
