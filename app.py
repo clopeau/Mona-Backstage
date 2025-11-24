@@ -49,9 +49,10 @@ def generer_structure_vide(lundi_date):
         d_str = curr.strftime("%d/%m/%Y")
         actif_m = True if i < 6 else False
         heure_m = "10:00" if i == 5 else "12:00"
-        slots.append({"id": f"{d_str}-matin", "jour": jour, "date": d_str, "heure": heure_m, "actif": actif_m, "candidats_cam": [], "candidats_voix": [], "elu_cam": [], "elu_voix": None, "type": "matin"})
+        # Note : elu_voix est maintenant initialisé comme une liste []
+        slots.append({"id": f"{d_str}-matin", "jour": jour, "date": d_str, "heure": heure_m, "actif": actif_m, "candidats_cam": [], "candidats_voix": [], "elu_cam": [], "elu_voix": [], "type": "matin"})
         actif_s = True if i < 5 else False
-        slots.append({"id": f"{d_str}-soir", "jour": jour, "date": d_str, "heure": "18:30", "actif": actif_s, "candidats_cam": [], "candidats_voix": [], "elu_cam": [], "elu_voix": None, "type": "soir"})
+        slots.append({"id": f"{d_str}-soir", "jour": jour, "date": d_str, "heure": "18:30", "actif": actif_s, "candidats_cam": [], "candidats_voix": [], "elu_cam": [], "elu_voix": [], "type": "soir"})
         curr += timedelta(days=1)
     return slots
 
@@ -60,8 +61,14 @@ def generer_lien_whatsapp(slots):
     if not slots_actifs: return "https://wa.me/"
     text = "*👗 LIVE PLANNER - MONA DRESS 👗*\n\n"
     for slot in slots_actifs:
-        cam = ", ".join(slot['elu_cam']) if slot['elu_cam'] else "❓"
-        voix = slot['elu_voix'] if slot['elu_voix'] else "❓"
+        # Gestion multi-voix pour l'affichage
+        # On s'assure que c'est une liste (compatibilité anciens fichiers)
+        list_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
+        list_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
+
+        cam = ", ".join(list_cam) if list_cam else "❓"
+        voix = ", ".join(list_voix) if list_voix else "❓"
+        
         text += f"🗓️ *{slot['jour']} {slot['date']} à {slot['heure']}*\n🎥 Cam: {cam}\n🎙️ Voix: {voix}\n\n"
     text += "Merci les filles ! ✨"
     return f"https://wa.me/?text={urllib.parse.quote(text)}"
@@ -133,8 +140,14 @@ if mode_view == "Artiste":
                         st.markdown(f"### {slot['heure']}")
                     with c_info:
                         st.markdown(f"**{slot['jour']} {slot['date']}**")
-                        cam_txt = ", ".join(slot['elu_cam']) if slot['elu_cam'] else "..."
-                        voix_txt = slot['elu_voix'] if slot['elu_voix'] else "..."
+                        
+                        # Sécurisation types listes pour affichage
+                        l_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
+                        l_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
+                        
+                        cam_txt = ", ".join(l_cam) if l_cam else "..."
+                        voix_txt = ", ".join(l_voix) if l_voix else "..."
+                        
                         st.caption(f"🎥 {cam_txt} | 🎙️ {voix_txt}")
 
     # --- TAB 2 : VŒUX SIMPLIFIÉS ---
@@ -160,20 +173,13 @@ if mode_view == "Artiste":
                             st.caption("Rien de prévu.")
                         
                         for slot in slots_vis:
-                            # 1. On reformate la date pour être court (ex: 24/11)
-                            # slot['date'] est "24/11/2023"
                             short_date = "/".join(slot['date'].split("/")[:2])
-                            
-                            # 2. Création du label compact
                             label_case = f"**{slot['heure']}** - {slot['jour']} {short_date}"
                             
-                            # 3. Est-elle dispo ? (Si elle est dans l'une des listes, elle est dispo)
                             is_dispo = (current_artiste in slot['candidats_cam']) or (current_artiste in slot['candidats_voix'])
                             
-                            # 4. Affichage Checkbox
                             new_state = st.checkbox(label_case, value=is_dispo, key=f"d_{slot['id']}")
                             
-                            # 5. Logique : Si coché -> ajout partout. Si décoché -> retrait partout.
                             if new_state:
                                 if current_artiste not in slot['candidats_cam']: slot['candidats_cam'].append(current_artiste)
                                 if current_artiste not in slot['candidats_voix']: slot['candidats_voix'].append(current_artiste)
@@ -236,23 +242,37 @@ elif mode_view == "Boss":
             save_data(data)
             st.success("Structure sauvegardée !")
 
-    # --- CASTING ---
+    # --- CASTING (Multi-Selection pour les deux) ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots: st.warning("Aucun live actif.")
         elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure d'abord.")
         else:
             for s in active_slots:
-                with st.expander(f"{s['jour']} {s['heure']} ({len(s['candidats_cam'])})"): 
-                    # Note: on affiche len(cam) car cam et voix sont identiques niveau dispos maintenant
+                with st.expander(f"{s['jour']} {s['heure']} ({len(s['candidats_cam'])})"):
                     c1, c2 = st.columns(2)
-                    s['elu_cam'] = c1.multiselect("🎥 Cam", data["equipe"], default=[p for p in s['elu_cam'] if p in data["equipe"]], key=f"mc_{s['id']}")
-                    # Affichage des dispos simplifié
+                    
+                    # --- CAMÉRA ---
+                    # Vérification compatibilité type list
+                    curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
+                    s['elu_cam'] = c1.multiselect(
+                        "🎥 Cam", 
+                        data["equipe"], 
+                        default=[p for p in curr_cam if p in data["equipe"]], 
+                        key=f"mc_{s['id']}"
+                    )
                     st.caption(f"Dispos : {', '.join(s['candidats_cam'])}")
                     
-                    idx = (["..."]+data["equipe"]).index(s['elu_voix']) if s['elu_voix'] in data["equipe"] else 0
-                    sel = c2.selectbox("🎙️ Voix", ["..."]+data["equipe"], index=idx, key=f"mv_{s['id']}")
-                    s['elu_voix'] = sel if sel != "..." else None
+                    # --- VOIX (NOUVEAU : Multiselect) ---
+                    # Vérification compatibilité type list (si ancienne version string)
+                    curr_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
+                    
+                    s['elu_voix'] = c2.multiselect(
+                        "🎙️ Voix", 
+                        data["equipe"], 
+                        default=[p for p in curr_voix if p in data["equipe"]], 
+                        key=f"mv_{s['id']}"
+                    )
             
             if st.button("💾 Sauvegarder Casting", use_container_width=True):
                 save_data(data)
