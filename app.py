@@ -104,8 +104,13 @@ def generer_lien_whatsapp(slots):
         lines.append("")
     
     lines.append("Merci les filles ! ✨")
-    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
-
+    
+    # CORRECTION : On prépare le texte AVANT de le mettre dans l'URL
+    full_text = "\n".join(lines)
+    encoded = urllib.parse.quote(full_text)
+    
+    return f"https://wa.me/?text={encoded}"
+    
 # --- CHARGEMENT ---
 data = load_data()
 cookie_manager = stx.CookieManager()
