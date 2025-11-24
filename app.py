@@ -10,6 +10,21 @@ import extra_streamlit_components as stx
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
 
+# --- STYLE CSS (Pour rendre la liste compacte) ---
+st.markdown("""
+    <style>
+    /* Réduit le padding des boutons poubelle */
+    div[data-testid="column"] button {
+        padding: 0rem 0.5rem !important;
+        min-height: 2.5rem;
+    }
+    /* Réduit l'espace entre les lignes de la liste */
+    div[data-testid="stVerticalBlock"] > div {
+        gap: 0.5rem !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- FONCTIONS UTILITAIRES ---
 
 def get_monday(date_obj):
@@ -248,35 +263,35 @@ elif mode_view == "Boss":
             st.markdown(f"### [👉 WhatsApp]({link})")
         else: st.error("Structure non sauvegardée.")
 
-    # --- ÉQUIPE (COMPACT & CORRIGÉ) ---
+    # --- ÉQUIPE (VERSION COMPACTE 4.6) ---
     with t4:
-        st.subheader("Gérer la Team")
+        st.subheader("Team")
         
-        # AJOUT
+        # FORMULAIRE AJOUT
         with st.form("add_member", clear_on_submit=True):
-            c_input, c_btn = st.columns([3, 1])
-            new = c_input.text_input("Nom", placeholder="Nouveau membre", label_visibility="collapsed")
-            if c_btn.form_submit_button("Ajouter"):
+            c_input, c_btn = st.columns([4, 1])
+            new = c_input.text_input("Nom", placeholder="Nouveau...", label_visibility="collapsed")
+            if c_btn.form_submit_button("➕", use_container_width=True):
                 if new and new not in data["equipe"]:
                     data["equipe"].append(new)
                     save_data(data)
                     st.rerun()
 
-        st.divider()
+        st.markdown("---")
         
-        # LISTE COMPACTE AVEC CLÉ UNIQUE (FIX ERREUR)
-        # On utilise enumerate(data["equipe"]) pour avoir un index 'i' unique
+        # LISTE COMPACTE SUR 2 COLONNES
+        # On utilise enumerate pour garantir une key unique
         for i, member in enumerate(data["equipe"]):
-            # Colonnes très serrées : 15% bouton, 85% nom
-            c_del, c_name = st.columns([0.15, 0.85])
+            # Ratio 1/5 pour "Poubelle" vs "Nom"
+            col_btn, col_txt = st.columns([1, 5])
             
-            with c_del:
-                # La clé est maintenant unique grâce à 'i' : key=f"del_{i}"
-                if st.button("🗑️", key=f"del_{i}"):
-                    data["equipe"].pop(i) # On supprime par index, c'est plus sûr
+            with col_btn:
+                # Bouton simple et unique
+                if st.button("🗑", key=f"del_{i}", use_container_width=True):
+                    data["equipe"].pop(i)
                     save_data(data)
                     st.rerun()
             
-            with c_name:
-                # Petit ajustement vertical pour que le texte soit aligné avec le bouton
-                st.markdown(f"<div style='padding-top: 5px;'><b>{member}</b></div>", unsafe_allow_html=True)
+            with col_txt:
+                # Alignement vertical du texte pour être en face du bouton
+                st.markdown(f"<div style='margin-top: 5px; font-weight: bold;'>{member}</div>", unsafe_allow_html=True)
