@@ -248,39 +248,35 @@ elif mode_view == "Boss":
             st.markdown(f"### [👉 WhatsApp]({link})")
         else: st.error("Structure non sauvegardée.")
 
-    # --- ÉQUIPE (NOUVELLE VERSION) ---
+    # --- ÉQUIPE (COMPACT & CORRIGÉ) ---
     with t4:
         st.subheader("Gérer la Team")
         
-        # 1. FORMULAIRE D'AJOUT
-        with st.form("add_member_form", clear_on_submit=True):
-            c_add, c_btn = st.columns([3, 1])
-            new_member = c_add.text_input("Nouveau prénom", label_visibility="collapsed", placeholder="Prénom")
-            submitted = c_btn.form_submit_button("➕ Ajouter")
-            
-            if submitted and new_member:
-                if new_member not in data["equipe"]:
-                    data["equipe"].append(new_member)
+        # AJOUT
+        with st.form("add_member", clear_on_submit=True):
+            c_input, c_btn = st.columns([3, 1])
+            new = c_input.text_input("Nom", placeholder="Nouveau membre", label_visibility="collapsed")
+            if c_btn.form_submit_button("Ajouter"):
+                if new and new not in data["equipe"]:
+                    data["equipe"].append(new)
                     save_data(data)
-                    st.success(f"{new_member} ajouté(e) !")
                     st.rerun()
-                else:
-                    st.warning("Ce prénom existe déjà.")
 
         st.divider()
-        st.write(f"**Membres actuels ({len(data['equipe'])}) :**")
         
-        # 2. LISTE AVEC BOUTON SUPPRIMER
-        for member in data["equipe"]:
-            # Container ou colonnes pour aligner Nom et Poubelle
-            c_name, c_del = st.columns([4, 1])
+        # LISTE COMPACTE AVEC CLÉ UNIQUE (FIX ERREUR)
+        # On utilise enumerate(data["equipe"]) pour avoir un index 'i' unique
+        for i, member in enumerate(data["equipe"]):
+            # Colonnes très serrées : 15% bouton, 85% nom
+            c_del, c_name = st.columns([0.15, 0.85])
             
-            # Affichage du nom
-            c_name.markdown(f"👤 **{member}**")
+            with c_del:
+                # La clé est maintenant unique grâce à 'i' : key=f"del_{i}"
+                if st.button("🗑️", key=f"del_{i}"):
+                    data["equipe"].pop(i) # On supprime par index, c'est plus sûr
+                    save_data(data)
+                    st.rerun()
             
-            # Bouton supprimer
-            # On utilise une clé unique basée sur le nom pour éviter les conflits
-            if c_del.button("🗑️", key=f"del_{member}"):
-                data["equipe"].remove(member)
-                save_data(data)
-                st.rerun()
+            with c_name:
+                # Petit ajustement vertical pour que le texte soit aligné avec le bouton
+                st.markdown(f"<div style='padding-top: 5px;'><b>{member}</b></div>", unsafe_allow_html=True)
