@@ -10,6 +10,15 @@ import extra_streamlit_components as stx
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
 
+# --- CSS / STYLE ---
+st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; align-items: center; }
+    div[data-testid="column"] button { padding: 0rem 0.5rem !important; min-height: 2.5rem; width: auto !important; }
+    div[data-testid="column"] p { font-size: 1.1rem; margin-bottom: 0px; }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- FONCTIONS UTILITAIRES ---
 
 def get_monday(date_obj):
@@ -21,23 +30,39 @@ def date_to_str(date_obj):
 def str_to_date(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d")
 
+def format_titre_slot(slot):
+    """Uniformise l'affichage : Lundi 18:30 (24/11)"""
+    short_date = "/".join(slot['date'].split("/")[:2]) # "24/11/2025" -> "24/11"
+    return f"**{slot['jour']} {slot['heure']}** ({short_date})"
+
 def load_data():
     default_data = {
         "weeks": {}, 
         "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"] 
     }
     if not os.path.exists(DATA_FILE):
-        return default_data
-    try:
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            if "weeks" not in data: data["weeks"] = {}
-            if "equipe" not in data: data["equipe"] = default_data["equipe"]
-            return data
-    except:
-        return default_data
+        data = default_data
+    else:
+        try:
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+                if "weeks" not in data: data["weeks"] = {}
+                if "equipe" not in data: data["equipe"] = default_data["equipe"]
+        except:
+            data = default_data
+    
+    # NETTOYAGE EQUIPE : Doublons + Tri Alphabétique
+    if data.get("equipe"):
+        # set() supprime les doublons, sorted() trie
+        data["equipe"] = sorted(list(set(data["equipe"])))
+        
+    return data
 
 def save_data(data):
+    # On trie aussi avant de sauvegarder pour être sûr
+    if data.get("equipe"):
+        data["equipe"] = sorted(list(set(data["equipe"])))
+        
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, default=str)
 
@@ -58,15 +83,32 @@ def generer_structure_vide(lundi_date):
 def generer_lien_whatsapp(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
-    text = "*👗 LIVE PLANNER - MONA DRESS 👗*\n\n"
+    
+    # Construction du texte ligne par ligne pour éviter les soucis d'encodage complexes
+    lines = []
+    lines.append("*👗 LIVE PLANNER - MONA DRESS 👗*")
+    lines.append("")
+    
     for slot in slots_actifs:
+        # Uniformisation affichage
+        short_date = "/".join(slot['date'].split("/")[:2])
+        header = f"🗓️ *{slot['jour']} {slot['heure']}* ({short_date})"
+        
         list_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
         list_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
+        
         cam = ", ".join(list_cam) if list_cam else "❓"
         voix = ", ".join(list_voix) if list_voix else "❓"
-        text += f"🗓️ *{slot['jour']} {slot['date']} à {slot['heure']}*\n🎥 Cam: {cam}\n🎙️ Voix: {voix}\n\n"
-    text += "Merci les filles ! ✨"
-    return f"https://wa.me/?text={urllib.parse.quote(text)}"
+        
+        lines.append(header)
+        lines.append(f"🎥 Cam: {cam}")
+        lines.append(f"🎙️ Voix: {voix}")
+        lines.append("")
+    
+    lines.append("Merci les filles ! ✨")
+    
+    full_text = "\n".join(lines)
+    return f"https://wa.me/?text={urllib.parse.quote(full_text)}"
 
 # --- INTERFACE ---
 
@@ -110,7 +152,6 @@ choix_semaines = {
 #              VUE ARTISTE
 # ==========================================
 if mode_view == "Artiste":
-    
     if not current_artiste:
         st.info("👈 Veuillez sélectionner votre prénom dans le menu de gauche.")
         st.stop()
@@ -130,16 +171,14 @@ if mode_view == "Artiste":
         else:
             for slot in slots_visibles:
                 with st.container(border=True):
-                    c_time, c_info = st.columns([1, 3])
-                    with c_time:
-                        st.markdown(f"### {slot['heure']}")
-                    with c_info:
-                        st.markdown(f"**{slot['jour']} {slot['date']}**")
-                        l_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
-                        l_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
-                        cam_txt = ", ".join(l_cam) if l_cam else "..."
-                        voix_txt = ", ".join(l_voix) if l_voix else "..."
-                        st.caption(f"🎥 {cam_txt} | 🎙️ {voix_txt}")
+                    # Affichage Uniformisé
+                    st.markdown(format_titre_slot(slot))
+                    
+                    l_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
+                    l_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
+                    cam_txt = ", ".join(l_cam) if l_cam else "..."
+                    voix_txt = ", ".join(l_voix) if l_voix else "..."
+                    st.caption(f"🎥 {cam_txt} | 🎙️ {voix_txt}")
 
     # --- TAB 2 : VŒUX ---
     with tab_voeux:
@@ -156,8 +195,9 @@ if mode_view == "Artiste":
                         slots_vis = [s for s in slots_target if s.get('actif', True)]
                         if not slots_vis: st.caption("Rien de prévu.")
                         for slot in slots_vis:
-                            short_date = "/".join(slot['date'].split("/")[:2])
-                            label_case = f"**{slot['heure']}** - {slot['jour']} {short_date}"
+                            # Affichage Uniformisé pour la case à cocher
+                            label_case = format_titre_slot(slot).replace("**", "") # On enlève le gras pour la checkbox
+                            
                             is_dispo = (current_artiste in slot['candidats_cam']) or (current_artiste in slot['candidats_voix'])
                             new_state = st.checkbox(label_case, value=is_dispo, key=f"d_{slot['id']}")
                             if new_state:
@@ -196,8 +236,12 @@ elif mode_view == "Boss":
         for i in range(0, len(slots_current_work), 2):
             slot_m = slots_current_work[i]
             slot_s = slots_current_work[i+1]
+            
+            # Titre du jour commun aux deux slots
+            short_date = "/".join(slot_m['date'].split("/")[:2])
+            
             with st.container(border=True):
-                st.markdown(f"**{slot_m['jour']}** {slot_m['date']}")
+                st.markdown(f"**{slot_m['jour']}** ({short_date})")
                 col_matin, col_soir = st.columns(2)
                 with col_matin:
                     is_active_m = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
@@ -228,7 +272,8 @@ elif mode_view == "Boss":
         elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure d'abord.")
         else:
             for s in active_slots:
-                with st.expander(f"{s['jour']} {s['heure']} ({len(s['candidats_cam'])})"):
+                # Affichage Uniformisé et OUVERT PAR DÉFAUT (expanded=True)
+                with st.expander(format_titre_slot(s) + f" - ({len(s['candidats_cam'])})", expanded=True):
                     c1, c2 = st.columns(2)
                     curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
                     s['elu_cam'] = c1.multiselect("🎥 Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=f"mc_{s['id']}")
@@ -248,44 +293,39 @@ elif mode_view == "Boss":
             st.markdown(f"### [👉 WhatsApp]({link})")
         else: st.error("Structure non sauvegardée.")
 
-    # --- ÉQUIPE (STABLE MOBILE VERSION) ---
+    # --- ÉQUIPE (TRIÉE & SANS DOUBLONS) ---
     with t4:
         st.subheader("Gérer la Team")
         
-        # 1. Ajout (Formulaire simple)
         with st.form("add_member", clear_on_submit=True):
             c_in, c_bt = st.columns([3, 1])
             new = c_in.text_input("Nom", placeholder="Nouveau...", label_visibility="collapsed")
             if c_bt.form_submit_button("Ajouter", use_container_width=True):
-                if new and new not in data["equipe"]:
+                if new:
+                    # Ajout, puis set/sort géré par load/save data
                     data["equipe"].append(new)
                     save_data(data)
                     st.rerun()
 
         st.markdown("---")
         
-        # 2. Liste Carte avec Confirmation
+        # Affichage (la liste est déjà triée grâce à load_data)
         for i, member in enumerate(data["equipe"]):
-            # On utilise border=True pour faire une jolie carte
             with st.container(border=True):
                 col_txt, col_act = st.columns([4, 1])
-                
                 with col_txt:
                     st.markdown(f"**{member}**")
-                
                 with col_act:
-                    # Bouton Croix
                     if st.button("❌", key=f"pre_del_{i}"):
                         st.session_state[f"confirm_del_{i}"] = True
                 
-                # Zone de confirmation (apparaît seulement si on a cliqué sur la croix)
                 if st.session_state.get(f"confirm_del_{i}", False):
-                    st.markdown("⚠️ **Supprimer définitivement ?**")
-                    col_yes, col_no = st.columns(2)
-                    if col_yes.button("Oui", key=f"yes_{i}", type="primary"):
+                    st.markdown("Sûr ?")
+                    c_y, c_n = st.columns(2)
+                    if c_y.button("Oui", key=f"y_{i}", type="primary"):
                         data["equipe"].pop(i)
                         save_data(data)
                         st.rerun()
-                    if col_no.button("Non", key=f"no_{i}"):
+                    if c_n.button("Non", key=f"n_{i}"):
                         st.session_state[f"confirm_del_{i}"] = False
                         st.rerun()
