@@ -71,7 +71,7 @@ def generer_lien_whatsapp(slots):
 data = load_data()
 st.title("👗 Mona Backstage")
 
-# --- COOKIES & IDENTIFICATION ---
+# --- COOKIES ---
 cookie_manager = stx.CookieManager()
 cookie_user = cookie_manager.get(cookie="mona_artiste_name")
 
@@ -84,9 +84,7 @@ if mode_view == "Artiste":
     st.sidebar.write("👤 **Identification**")
     team_list = ["Choisir..."] + data["equipe"]
     default_index = team_list.index(cookie_user) if cookie_user in data["equipe"] else 0
-    
     selected_user = st.sidebar.selectbox("Je suis :", team_list, index=default_index)
-    
     if selected_user != "Choisir...":
         current_artiste = selected_user
         if selected_user != cookie_user:
@@ -129,79 +127,69 @@ if mode_view == "Artiste":
             st.info("Planning non publié.")
         else:
             for slot in slots_visibles:
-                # DESIGN COMPACT CARTE
                 with st.container(border=True):
-                    # Colonne Heure (Petite) vs Info (Grande)
                     c_time, c_info = st.columns([1, 3])
-                    
                     with c_time:
-                        # Affichage de l'heure en gros
                         st.markdown(f"### {slot['heure']}")
-                    
                     with c_info:
-                        # Date et Casting
                         st.markdown(f"**{slot['jour']} {slot['date']}**")
-                        
-                        # Gestion affichage casting
                         cam_txt = ", ".join(slot['elu_cam']) if slot['elu_cam'] else "..."
                         voix_txt = slot['elu_voix'] if slot['elu_voix'] else "..."
-                        
                         st.caption(f"🎥 {cam_txt} | 🎙️ {voix_txt}")
 
-    # --- TAB 2 : VŒUX SUR 2 SEMAINES ---
+    # --- TAB 2 : VŒUX SIMPLIFIÉS ---
     with tab_voeux:
-        st.write("Coche tes dispos pour les semaines ouvertes :")
+        st.write("Cochez les créneaux où vous êtes disponible :")
         
-        # On prépare les semaines à afficher
         weeks_to_show = [
-            (date_to_str(monday_next), f"Semaine Prochaine (du {monday_next.strftime('%d/%m')})"),
-            (date_to_str(monday_next_2), f"Dans 2 semaines (du {monday_next_2.strftime('%d/%m')})")
+            (date_to_str(monday_next), f"Semaine Prochaine"),
+            (date_to_str(monday_next_2), f"Dans 2 semaines")
         ]
         
-        # On vérifie s'il y a au moins une semaine ouverte
         if not any(wk[0] in data["weeks"] for wk in weeks_to_show):
-            st.warning("⏳ Aucune semaine n'est ouverte aux vœux pour l'instant.")
+            st.warning("⏳ Pas de créneaux ouverts pour l'instant.")
         else:
             with st.form("dispo_form"):
                 for wk_key, wk_label in weeks_to_show:
-                    
-                    # On affiche la semaine seulement si elle existe dans la DB
                     if wk_key in data["weeks"]:
-                        st.markdown(f"#### 🗓️ {wk_label}")
+                        st.markdown(f"##### 🗓️ {wk_label}")
                         slots_target = data["weeks"][wk_key]
                         slots_vis = [s for s in slots_target if s.get('actif', True)]
                         
                         if not slots_vis:
-                            st.caption("Pas de lives prévus cette semaine là.")
+                            st.caption("Rien de prévu.")
                         
                         for slot in slots_vis:
-                            # Une ligne compacte par créneau
-                            c_lbl, c_cam, c_voix = st.columns([2, 1, 1])
-                            c_lbl.markdown(f"**{slot['jour']} {slot['heure']}**")
+                            # 1. On reformate la date pour être court (ex: 24/11)
+                            # slot['date'] est "24/11/2023"
+                            short_date = "/".join(slot['date'].split("/")[:2])
                             
-                            # Cam
-                            is_c = current_artiste in slot['candidats_cam']
-                            if c_cam.checkbox("Cam", value=is_c, key=f"c_{slot['id']}"):
+                            # 2. Création du label compact
+                            label_case = f"**{slot['heure']}** - {slot['jour']} {short_date}"
+                            
+                            # 3. Est-elle dispo ? (Si elle est dans l'une des listes, elle est dispo)
+                            is_dispo = (current_artiste in slot['candidats_cam']) or (current_artiste in slot['candidats_voix'])
+                            
+                            # 4. Affichage Checkbox
+                            new_state = st.checkbox(label_case, value=is_dispo, key=f"d_{slot['id']}")
+                            
+                            # 5. Logique : Si coché -> ajout partout. Si décoché -> retrait partout.
+                            if new_state:
                                 if current_artiste not in slot['candidats_cam']: slot['candidats_cam'].append(current_artiste)
-                            else:
-                                if current_artiste in slot['candidats_cam']: slot['candidats_cam'].remove(current_artiste)
-                            
-                            # Voix
-                            is_v = current_artiste in slot['candidats_voix']
-                            if c_voix.checkbox("Voix", value=is_v, key=f"v_{slot['id']}"):
                                 if current_artiste not in slot['candidats_voix']: slot['candidats_voix'].append(current_artiste)
                             else:
+                                if current_artiste in slot['candidats_cam']: slot['candidats_cam'].remove(current_artiste)
                                 if current_artiste in slot['candidats_voix']: slot['candidats_voix'].remove(current_artiste)
                         
-                        st.divider() # Séparation entre les semaines
+                        st.divider()
 
-                if st.form_submit_button("✅ Envoyer tous mes vœux", use_container_width=True):
+                if st.form_submit_button("✅ Envoyer mes disponibilités", use_container_width=True):
                     save_data(data)
                     st.balloons()
-                    st.success("C'est enregistré !")
+                    st.success("Disponibilités envoyées au Boss !")
 
 # ==========================================
-#              VUE BOSS (ADMIN)
+#              VUE BOSS
 # ==========================================
 elif mode_view == "Boss":
     st.header("🕶️ Espace Boss")
@@ -255,14 +243,17 @@ elif mode_view == "Boss":
         elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure d'abord.")
         else:
             for s in active_slots:
-                with st.expander(f"{s['jour']} {s['heure']} ({len(s['candidats_cam'])+len(s['candidats_voix'])})"):
+                with st.expander(f"{s['jour']} {s['heure']} ({len(s['candidats_cam'])})"): 
+                    # Note: on affiche len(cam) car cam et voix sont identiques niveau dispos maintenant
                     c1, c2 = st.columns(2)
                     s['elu_cam'] = c1.multiselect("🎥 Cam", data["equipe"], default=[p for p in s['elu_cam'] if p in data["equipe"]], key=f"mc_{s['id']}")
-                    st.caption(f"Dispos: {', '.join(s['candidats_cam'])}")
+                    # Affichage des dispos simplifié
+                    st.caption(f"Dispos : {', '.join(s['candidats_cam'])}")
+                    
                     idx = (["..."]+data["equipe"]).index(s['elu_voix']) if s['elu_voix'] in data["equipe"] else 0
                     sel = c2.selectbox("🎙️ Voix", ["..."]+data["equipe"], index=idx, key=f"mv_{s['id']}")
                     s['elu_voix'] = sel if sel != "..." else None
-                    st.caption(f"Dispos: {', '.join(s['candidats_voix'])}")
+            
             if st.button("💾 Sauvegarder Casting", use_container_width=True):
                 save_data(data)
                 st.success("Casting OK !")
