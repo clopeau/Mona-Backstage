@@ -10,17 +10,26 @@ import extra_streamlit_components as stx
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
 
-# --- STYLE CSS (Pour rendre la liste compacte) ---
+# --- CSS MAGIQUE (POUR FORCER L'ALIGNEMENT MOBILE) ---
 st.markdown("""
     <style>
-    /* Réduit le padding des boutons poubelle */
+    /* 1. Force les colonnes à rester sur la même ligne (ne pas empiler sur mobile) */
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        align-items: center; /* Centre verticalement le bouton et le texte */
+    }
+    
+    /* 2. Réduit la taille du bouton poubelle */
     div[data-testid="column"] button {
         padding: 0rem 0.5rem !important;
         min-height: 2.5rem;
+        width: auto !important; /* Empêche le bouton de prendre toute la largeur */
     }
-    /* Réduit l'espace entre les lignes de la liste */
-    div[data-testid="stVerticalBlock"] > div {
-        gap: 0.5rem !important;
+    
+    /* 3. Ajuste le texte du nom pour qu'il soit bien aligné */
+    div[data-testid="column"] p {
+        font-size: 1.1rem;
+        margin-bottom: 0px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -263,11 +272,10 @@ elif mode_view == "Boss":
             st.markdown(f"### [👉 WhatsApp]({link})")
         else: st.error("Structure non sauvegardée.")
 
-    # --- ÉQUIPE (VERSION COMPACTE 4.6) ---
+    # --- ÉQUIPE (CORRIGÉE & COMPACTE) ---
     with t4:
         st.subheader("Team")
         
-        # FORMULAIRE AJOUT
         with st.form("add_member", clear_on_submit=True):
             c_input, c_btn = st.columns([4, 1])
             new = c_input.text_input("Nom", placeholder="Nouveau...", label_visibility="collapsed")
@@ -279,19 +287,17 @@ elif mode_view == "Boss":
 
         st.markdown("---")
         
-        # LISTE COMPACTE SUR 2 COLONNES
-        # On utilise enumerate pour garantir une key unique
+        # Liste ultra-compacte avec CSS (flex-wrap: nowrap)
         for i, member in enumerate(data["equipe"]):
             # Ratio 1/5 pour "Poubelle" vs "Nom"
+            # Notez que nous n'utilisons PAS use_container_width=True sur le bouton pour qu'il reste petit
             col_btn, col_txt = st.columns([1, 5])
             
             with col_btn:
-                # Bouton simple et unique
-                if st.button("🗑", key=f"del_{i}", use_container_width=True):
+                if st.button("🗑", key=f"del_{i}"):
                     data["equipe"].pop(i)
                     save_data(data)
                     st.rerun()
             
             with col_txt:
-                # Alignement vertical du texte pour être en face du bouton
                 st.markdown(f"<div style='margin-top: 5px; font-weight: bold;'>{member}</div>", unsafe_allow_html=True)
