@@ -63,6 +63,7 @@ def generer_structure_vide(lundi_date):
 def generer_lien_whatsapp(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
+    
     lines = ["*👗 LIVE PLANNER - MONA DRESS 👗*", ""]
     for slot in slots_actifs:
         short_date = "/".join(slot['date'].split("/")[:2])
@@ -74,7 +75,11 @@ def generer_lien_whatsapp(slots):
         lines.append(f"🎙️ Voix: {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
     lines.append("Merci les filles ! ✨")
-    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
+    
+    # --- CORRECTION COMPATIBILITÉ PYTHON < 3.12 ---
+    full_text = "\n".join(lines)
+    encoded_text = urllib.parse.quote(full_text)
+    return f"https://wa.me/?text={encoded_text}"
 
 # --- CHARGEMENT DONNÉES & COOKIES ---
 data = load_data()
