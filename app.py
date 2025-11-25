@@ -10,7 +10,7 @@ import time
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
-GLOBAL_PASSWORD = "mona" # <--- MOT DE PASSE À MODIFIER ICI
+GLOBAL_PASSWORD = "mona"
 
 # --- CSS / STYLE ---
 st.markdown("""
@@ -63,7 +63,6 @@ def generer_structure_vide(lundi_date):
 def generer_lien_whatsapp(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
-    
     lines = ["*👗 LIVE PLANNER - MONA DRESS 👗*", ""]
     for slot in slots_actifs:
         short_date = "/".join(slot['date'].split("/")[:2])
@@ -75,73 +74,99 @@ def generer_lien_whatsapp(slots):
         lines.append(f"🎙️ Voix: {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
     lines.append("Merci les filles ! ✨")
-    
-    # --- CORRECTION COMPATIBILITÉ PYTHON < 3.12 ---
     full_text = "\n".join(lines)
     encoded_text = urllib.parse.quote(full_text)
     return f"https://wa.me/?text={encoded_text}"
 
-# --- CHARGEMENT DONNÉES & COOKIES ---
+# --- CHARGEMENT DONNÉES ---
 data = load_data()
-cookie_manager = stx.CookieManager()
 
-# DATE D'EXPIRATION LONGUE (10 ans)
+# IMPORTANT : Clé unique pour le gestionnaire pour éviter les conflits
+cookie_manager = stx.CookieManager(key="mona_cookie_manager")
 long_expire = datetime.now() + timedelta(days=3650)
 
-# 1. VÉRIFICATION MOT DE PASSE (Mur de sécurité)
-auth_cookie = cookie_manager.get(cookie="mona_access")
+# =========================================================
+# 1. MUR DE MOT DE PASSE (CORRIGÉ AVEC SESSION STATE)
+# =========================================================
 
-if auth_cookie != "granted":
+# On vérifie d'abord la session (immédiat)
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+# On vérifie ensuite le cookie (long terme)
+auth_cookie = cookie_manager.get(cookie="mona_access")
+if auth_cookie == "granted":
+    st.session_state["authenticated"] = True
+
+# Si ni l'un ni l'autre n'est bon, on affiche le login
+if not st.session_state["authenticated"]:
     st.title("🔒 Accès Privé")
     pwd_input = st.text_input("Mot de passe", type="password")
+    
     if st.button("Entrer", type="primary"):
         if pwd_input == GLOBAL_PASSWORD:
+            # 1. On lance l'écriture du cookie
             cookie_manager.set("mona_access", "granted", expires_at=long_expire)
+            # 2. On valide la session pour passer tout de suite
+            st.session_state["authenticated"] = True
             st.success("Accès autorisé")
-            time.sleep(1)
+            time.sleep(1) # Petit temps pour que le cookie parte
             st.rerun()
         else:
             st.error("Mot de passe incorrect")
-    st.stop() # Bloque tout le reste si pas connecté
+    st.stop() # Arrêt du script ici si pas connecté
 
-# 2. VÉRIFICATION IDENTITÉ (Mur d'identité)
+# =========================================================
+# 2. MUR D'IDENTITÉ (PERSISTANT)
+# =========================================================
+
+# Même logique : Session (immédiat) + Cookie (long terme)
+if "current_user" not in st.session_state:
+    st.session_state["current_user"] = None
+
 identity_cookie = cookie_manager.get(cookie="mona_whoami")
-current_user = None
 
-# Si pas d'identité ou identité inconnue de la liste (ex: membre supprimé)
-if not identity_cookie or identity_cookie not in data["equipe"]:
+# Si le cookie existe et est valide, il prime
+if identity_cookie and identity_cookie in data["equipe"]:
+    st.session_state["current_user"] = identity_cookie
+
+# Si on ne sait toujours pas qui c'est
+if not st.session_state["current_user"]:
     st.title("👋 Qui es-tu ?")
-    st.info("Pour continuer, identifie-toi dans la liste :")
+    st.info("Identifie-toi pour accéder au planning :")
     
     user_choice = st.selectbox("Je suis :", ["Choisir..."] + data["equipe"])
     
     if user_choice != "Choisir...":
         cookie_manager.set("mona_whoami", user_choice, expires_at=long_expire)
+        st.session_state["current_user"] = user_choice
         st.success(f"Enchanté {user_choice} !")
         time.sleep(1)
         st.rerun()
-    st.stop() # Bloque le reste
-else:
-    current_user = identity_cookie
+    st.stop()
+
+# On récupère l'user validé pour le reste du script
+current_user = st.session_state["current_user"]
 
 
-# --- APPLICATION PRINCIPALE (Si Password OK + Identité OK) ---
+# =========================================================
+# 3. APPLICATION PRINCIPALE
+# =========================================================
 
-# Sidebar : Infos Utilisateur & Navigation
 st.sidebar.title("Mona Backstage")
-st.sidebar.success(f"👤 Connecté en tant que **{current_user}**")
+st.sidebar.success(f"👤 **{current_user}**")
 
-# Permettre de changer d'identité si on s'est trompé
+# Changement d'utilisateur
 with st.sidebar.expander("Changer d'utilisateur"):
-    change_user = st.selectbox("Nouvelle identité", data["equipe"], index=data["equipe"].index(current_user))
+    change_user = st.selectbox("Identité", data["equipe"], index=data["equipe"].index(current_user))
     if change_user != current_user:
         cookie_manager.set("mona_whoami", change_user, expires_at=long_expire)
+        st.session_state["current_user"] = change_user
         time.sleep(0.5)
         st.rerun()
 
 st.sidebar.markdown("---")
 mode_view = st.sidebar.radio("Navigation", ["Artiste", "Boss"])
-
 
 # --- DATES ---
 today = datetime.now()
@@ -155,21 +180,16 @@ choix_semaines = {
     f"Dans 2 semaines ({monday_next_2.strftime('%d/%m')})": date_to_str(monday_next_2),
 }
 
-# ==========================================
-#              VUE ARTISTE
-# ==========================================
+# --- VUE ARTISTE ---
 if mode_view == "Artiste":
     st.title(f"✨ Espace Artiste")
-    
     tab_visu, tab_voeux = st.tabs(["📅 Planning", "✍️ Mes Dispos"])
     
     with tab_visu:
         key_week = date_to_str(monday_current)
         slots_week = data["weeks"].get(key_week, [])
         slots_visibles = [s for s in slots_week if s.get('actif', True)]
-        
-        if not slots_visibles:
-            st.info("Aucun planning publié pour cette semaine.")
+        if not slots_visibles: st.info("Aucun planning publié.")
         else:
             for slot in slots_visibles:
                 with st.container(border=True):
@@ -182,9 +202,7 @@ if mode_view == "Artiste":
     with tab_voeux:
         st.write(f"Coche les créneaux pour **{current_user}** :")
         weeks_to_show = [(date_to_str(monday_next), f"Semaine Prochaine"), (date_to_str(monday_next_2), f"Dans 2 semaines")]
-        
-        if not any(wk[0] in data["weeks"] for wk in weeks_to_show):
-            st.warning("⏳ Pas encore de créneaux ouverts.")
+        if not any(wk[0] in data["weeks"] for wk in weeks_to_show): st.warning("⏳ Pas encore de créneaux ouverts.")
         else:
             with st.form("dispo_form"):
                 for wk_key, wk_label in weeks_to_show:
@@ -195,10 +213,8 @@ if mode_view == "Artiste":
                         if not slots_vis: st.caption("Rien de prévu.")
                         for slot in slots_vis:
                             label_case = format_titre_slot(slot).replace("**", "")
-                            # On utilise current_user qui est garanti par le mur d'identité
                             is_dispo = (current_user in slot['candidats_cam']) or (current_user in slot['candidats_voix'])
                             new_state = st.checkbox(label_case, value=is_dispo, key=f"d_{slot['id']}")
-                            
                             if new_state:
                                 if current_user not in slot['candidats_cam']: slot['candidats_cam'].append(current_user)
                                 if current_user not in slot['candidats_voix']: slot['candidats_voix'].append(current_user)
@@ -206,25 +222,19 @@ if mode_view == "Artiste":
                                 if current_user in slot['candidats_cam']: slot['candidats_cam'].remove(current_user)
                                 if current_user in slot['candidats_voix']: slot['candidats_voix'].remove(current_user)
                         st.divider()
-                
                 if st.form_submit_button("✅ Envoyer mes dispos", use_container_width=True):
                     save_data(data)
                     st.balloons()
                     st.success("C'est envoyé !")
 
-# ==========================================
-#              VUE BOSS
-# ==========================================
+# --- VUE BOSS ---
 elif mode_view == "Boss":
     st.title("🕶️ Espace Boss")
-    
     choix_admin = st.selectbox("Semaine cible :", list(choix_semaines.keys()))
     selected_week_key = choix_semaines[choix_admin]
     
-    if selected_week_key not in data["weeks"]:
-        slots_current_work = generer_structure_vide(str_to_date(selected_week_key))
-    else:
-        slots_current_work = data["weeks"][selected_week_key]
+    if selected_week_key not in data["weeks"]: slots_current_work = generer_structure_vide(str_to_date(selected_week_key))
+    else: slots_current_work = data["weeks"][selected_week_key]
         
     t1, t2, t3, t4 = st.tabs(["🛠️ Structure", "🎬 Casting", "📢 Whatsapp", "👥 Équipe"])
     
@@ -236,17 +246,14 @@ elif mode_view == "Boss":
             short_date = "/".join(slot_m['date'].split("/")[:2])
             with st.container(border=True):
                 st.markdown(f"<h4 style='margin:0; padding:0;'>{slot_m['jour']} ({short_date})</h4>", unsafe_allow_html=True)
-                
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 is_active_m = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
                 if is_active_m: st.text_input("Heure Midi", value=slot_m['heure'], key=f"hm_{slot_m['id']}", label_visibility="collapsed")
                 else: st.caption("💤 Off")
-                
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 is_active_s = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
                 if is_active_s: st.text_input("Heure Soir", value=slot_s['heure'], key=f"hs_{slot_s['id']}", label_visibility="collapsed")
                 else: st.caption("💤 Off")
-
         if st.button("💾 Enregistrer Structure", type="primary", use_container_width=True):
             for slot in slots_current_work:
                 k_act = f"tg_{slot['id']}"
@@ -263,19 +270,16 @@ elif mode_view == "Boss":
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots: st.warning("Pas de créneaux actifs.")
-        elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure d'abord.")
+        elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure.")
         else:
             for s in active_slots:
                 with st.expander(format_titre_slot(s) + f" - ({len(s['candidats_cam'])})", expanded=True):
                     curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
                     s['elu_cam'] = st.multiselect("🎥 Caméra", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=f"mc_{s['id']}")
                     if s['candidats_cam']: st.caption(f"✋ Dispos: {', '.join(s['candidats_cam'])}")
-                    
                     st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
-                    
                     curr_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
                     s['elu_voix'] = st.multiselect("🎙️ Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=f"mv_{s['id']}")
-            
             if st.button("💾 Sauvegarder Casting", use_container_width=True):
                 save_data(data)
                 st.success("Casting OK !")
