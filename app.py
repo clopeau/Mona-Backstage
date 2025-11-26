@@ -20,24 +20,14 @@ st.markdown("""
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
     .compact-hr { margin-top: 5px !important; margin-bottom: 5px !important; border: 0; border-top: 1px solid #e0e0e0; }
     
-    span[data-baseweb="tag"] {
-        background-color: #e8f5e9 !important;
-        border: 1px solid #c8e6c9 !important;
-    }
-    span[data-baseweb="tag"] span {
-        color: #2e7d32 !important;
-        font-weight: bold;
-    }
+    span[data-baseweb="tag"] { background-color: #e8f5e9 !important; border: 1px solid #c8e6c9 !important; }
+    span[data-baseweb="tag"] span { color: #2e7d32 !important; font-weight: bold; }
 
     div[data-testid="column"] button[kind="secondary"] {
-        background-color: #fff3e0 !important;
-        border: 1px solid #ffcc80 !important;
-        color: #ef6c00 !important;
-        font-weight: 600;
+        background-color: #fff3e0 !important; border: 1px solid #ffcc80 !important; color: #ef6c00 !important; font-weight: 600;
     }
     div[data-testid="column"] button[kind="secondary"]:hover {
-        background-color: #ffe0b2 !important;
-        border-color: #ef6c00 !important;
+        background-color: #ffe0b2 !important; border-color: #ef6c00 !important;
     }
 
     .wa-btn {
@@ -52,13 +42,7 @@ st.markdown("""
 def get_monday(date_obj): return date_obj - timedelta(days=date_obj.weekday())
 def date_to_str(date_obj): return date_obj.strftime("%Y-%m-%d")
 def str_to_date(date_str): return datetime.strptime(date_str, "%Y-%m-%d")
-
-def get_time_options():
-    times = []
-    for h in range(8, 23):
-        times.append(f"{h:02d}:00")
-        times.append(f"{h:02d}:30")
-    return times
+def get_time_options(): return [f"{h:02d}:{m:02d}" for h in range(8, 23) for m in (0, 30)]
 
 def format_titre_slot(slot):
     short_date = "/".join(slot['date'].split("/")[:2])
@@ -70,18 +54,32 @@ def is_future(slot):
         return slot_dt > datetime.now()
     except: return True
 
-# --- CALLBACK POUR LE CASTING (CORRECTION BUG) ---
+# --- LOGIQUE ROLES ---
+# both = Polyvalent (défaut), cam = Caméra, voix = Voix
+def get_role_icon(role):
+    if role == "cam": return "🎥"
+    if role == "voix": return "🎙️"
+    return "🌟"
+
+def is_compatible(member_name, target_role, data):
+    # Récupère le rôle, par défaut "both" pour la rétrocompatibilité
+    user_role = data.get("roles", {}).get(member_name, "both")
+    if user_role == "both": return True
+    return user_role == target_role
+
+# --- CALLBACK ---
 def ajouter_candidat_callback(widget_key, candidat_nom):
-    """Fonction appelée AVANT le rechargement de la page"""
-    # On récupère la liste actuelle dans le widget
     current_list = st.session_state.get(widget_key, [])
-    # On ajoute le candidat s'il n'y est pas déjà
     if candidat_nom not in current_list:
         current_list.append(candidat_nom)
         st.session_state[widget_key] = current_list
 
 def load_data():
-    default_data = {"weeks": {}, "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"]}
+    default_data = {
+        "weeks": {}, 
+        "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"],
+        "roles": {} # Nouveau dictionnaire pour les rôles
+    }
     if not os.path.exists(DATA_FILE): data = default_data
     else:
         try:
@@ -89,7 +87,9 @@ def load_data():
                 data = json.load(f)
                 if "weeks" not in data: data["weeks"] = {}
                 if "equipe" not in data: data["equipe"] = default_data["equipe"]
+                if "roles" not in data: data["roles"] = {} # Rétrocompatibilité
         except: data = default_data
+    
     if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
     return data
 
@@ -124,9 +124,7 @@ def generer_wa_structure(slots):
         lines.append(f"   ⏰ {slot['heure']}")
     lines.append("")
     lines.append("A vos agendas ! 🚀")
-    full_text = "\n".join(lines)
-    encoded = urllib.parse.quote(full_text)
-    return f"https://wa.me/?text={encoded}"
+    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
 
 def generer_wa_casting(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
@@ -141,9 +139,7 @@ def generer_wa_casting(slots):
         lines.append(f"🎙️ {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
     lines.append("Bon live à toutes ! 💪")
-    full_text = "\n".join(lines)
-    encoded = urllib.parse.quote(full_text)
-    return f"https://wa.me/?text={encoded}"
+    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
 
 # --- CHARGEMENT ---
 data = load_data()
@@ -203,16 +199,13 @@ today = datetime.now()
 monday_current = get_monday(today)
 monday_next = monday_current + timedelta(days=7)
 monday_next_2 = monday_current + timedelta(days=14)
-
 choix_semaines = {
     f"Semaine en cours ({monday_current.strftime('%d/%m')})": date_to_str(monday_current),
     f"Semaine prochaine ({monday_next.strftime('%d/%m')})": date_to_str(monday_next),
     f"Dans 2 semaines ({monday_next_2.strftime('%d/%m')})": date_to_str(monday_next_2),
 }
 
-# ==========================================
-#              VUE ARTISTE
-# ==========================================
+# --- VUE ARTISTE ---
 if mode_view == "Artiste":
     st.title(f"✨ Espace Artiste")
     tab_visu, tab_voeux = st.tabs(["📅 Timeline", "✍️ Mes Dispos"])
@@ -264,9 +257,7 @@ if mode_view == "Artiste":
                     st.balloons()
                     st.success("C'est envoyé !")
 
-# ==========================================
-#              VUE BOSS
-# ==========================================
+# --- VUE BOSS ---
 elif mode_view == "Boss":
     st.title("🕶️ Espace Boss")
     choix_admin = st.selectbox("Semaine cible :", list(choix_semaines.keys()))
@@ -277,26 +268,22 @@ elif mode_view == "Boss":
     
     t1, t2, t3 = st.tabs(["🛠️ Structure", "🎬 Casting", "👥 Équipe"])
     
-    # --- TAB 1 : STRUCTURE ---
+    # --- STRUCTURE ---
     with t1:
         st.caption("Configurer les horaires (Sauvegarde auto)")
         changes_detected = False
-        
         for i in range(0, len(slots_current_work), 2):
             slot_m = slots_current_work[i]
             slot_s = slots_current_work[i+1]
             short_date = "/".join(slot_m['date'].split("/")[:2])
-            
             with st.container(border=True):
                 st.markdown(f"<h4 style='margin:0; padding:0;'>{slot_m['jour']} ({short_date})</h4>", unsafe_allow_html=True)
                 
-                # MIDI
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 m_active = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
                 if m_active != slot_m.get('actif', True):
                     slot_m['actif'] = m_active
                     changes_detected = True
-                
                 if m_active:
                     idx_m = TIME_OPTIONS.index(slot_m['heure']) if slot_m['heure'] in TIME_OPTIONS else TIME_OPTIONS.index("12:00")
                     m_heure = st.selectbox("Heure M", TIME_OPTIONS, index=idx_m, key=f"hm_{slot_m['id']}", label_visibility="collapsed")
@@ -305,13 +292,11 @@ elif mode_view == "Boss":
                         changes_detected = True
                 else: st.caption("💤 Off")
                 
-                # SOIR
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 s_active = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
                 if s_active != slot_s.get('actif', True):
                     slot_s['actif'] = s_active
                     changes_detected = True
-                
                 if s_active:
                     idx_s = TIME_OPTIONS.index(slot_s['heure']) if slot_s['heure'] in TIME_OPTIONS else TIME_OPTIONS.index("18:30")
                     s_heure = st.selectbox("Heure S", TIME_OPTIONS, index=idx_s, key=f"hs_{slot_s['id']}", label_visibility="collapsed")
@@ -329,7 +314,7 @@ elif mode_view == "Boss":
         st.markdown(f"""<a href="{link_struct}" target="_blank" class="wa-btn">📢 Envoyer ouverture (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- TAB 2 : CASTING (AVEC CALLBACK) ---
+    # --- CASTING ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots: st.warning("Pas de créneaux actifs.")
@@ -343,23 +328,20 @@ elif mode_view == "Boss":
                     curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
                     key_ms_cam = f"mc_{s['id']}"
                     
-                    # Multiselect (State-aware)
                     new_cam = st.multiselect("Select Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=key_ms_cam, label_visibility="collapsed")
-                    
-                    # Détection changement manuel via multiselect
                     if new_cam != curr_cam:
                         s['elu_cam'] = new_cam
                         changes_casting = True
-                        curr_cam = new_cam # Update local
+                        curr_cam = new_cam
                     
-                    # Boutons Candidats
-                    cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam]
+                    # FILTRE ET AFFICHAGE BOUTONS (CAM)
+                    cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam and is_compatible(c, "cam", data)]
                     if cand_cam:
                         st.write("**Dispo :**")
                         cols_c = st.columns(min(len(cand_cam), 4))
                         for i, cand in enumerate(cand_cam):
-                            # CALLBACK ICI
-                            cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_cam, cand))
+                            if cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_cam, cand)):
+                                pass
 
                     st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                     
@@ -369,23 +351,20 @@ elif mode_view == "Boss":
                     key_ms_voix = f"mv_{s['id']}"
                     
                     new_voix = st.multiselect("Select Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=key_ms_voix, label_visibility="collapsed")
-                    
                     if new_voix != curr_voix:
                         s['elu_voix'] = new_voix
                         changes_casting = True
                         curr_voix = new_voix
                     
-                    cand_voix = [c for c in s['candidats_voix'] if c not in curr_voix]
+                    # FILTRE ET AFFICHAGE BOUTONS (VOIX)
+                    cand_voix = [c for c in s['candidats_voix'] if c not in curr_voix and is_compatible(c, "voix", data)]
                     if cand_voix:
                         st.write("**Dispo :**")
                         cols_v = st.columns(min(len(cand_voix), 4))
                         for i, cand in enumerate(cand_voix):
-                            # CALLBACK ICI
-                            cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_voix, cand))
+                            if cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_voix, cand)):
+                                pass
             
-            # SAUVEGARDE GLOBALE
-            # Si le multiselect a changé, on sauve. 
-            # Si le bouton a été cliqué, le callback a update le session state -> le multiselect a changé au rerun -> on passe ici -> on sauve.
             if changes_casting:
                 data["weeks"][selected_week_key] = slots_current_work
                 save_data(data)
@@ -395,28 +374,68 @@ elif mode_view == "Boss":
             st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- TAB 3 : EQUIPE ---
+    # --- EQUIPE (GESTION RÔLES) ---
     with t3:
-        st.subheader("Team")
+        st.subheader("Gérer la Team")
+        
+        # Ajout avec Rôle
         with st.form("add_member", clear_on_submit=True):
-            new = st.text_input("Nouveau membre", placeholder="Prénom")
-            if st.form_submit_button("Ajouter", use_container_width=True):
+            c1, c2, c3 = st.columns([3, 2, 1])
+            new = c1.text_input("Nom", placeholder="Nom", label_visibility="collapsed")
+            # Sélection du rôle à la création
+            role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
+            if c3.form_submit_button("Ajouter"):
                 if new:
                     data["equipe"].append(new)
+                    # Mapping du rôle
+                    r_code = "both"
+                    if "Caméra" in role: r_code = "cam"
+                    if "Voix" in role: r_code = "voix"
+                    data["roles"][new] = r_code
+                    
                     save_data(data)
                     st.rerun()
+        
         st.markdown("---")
+        
+        # Liste avec Modification de Rôle
         for i, member in enumerate(data["equipe"]):
             with st.container(border=True):
-                col_txt, col_act = st.columns([4, 1])
-                with col_txt: st.markdown(f"**{member}**")
-                with col_act:
+                c_nom, c_role, c_act = st.columns([3, 2, 1])
+                
+                with c_nom:
+                    st.markdown(f"**{member}**")
+                
+                with c_role:
+                    # On récupère le rôle actuel
+                    curr_role_code = data["roles"].get(member, "both")
+                    # Index pour le selectbox
+                    opts = ["both", "cam", "voix"]
+                    labels = ["🌟", "🎥", "🎙️"]
+                    try: idx = opts.index(curr_role_code)
+                    except: idx = 0
+                    
+                    # Changement direct du rôle
+                    new_role_lbl = st.selectbox("Rôle", labels, index=idx, key=f"role_{i}", label_visibility="collapsed")
+                    
+                    # Mapping inverse
+                    new_role_code = opts[labels.index(new_role_lbl)]
+                    
+                    # Si changement, sauvegarde directe
+                    if new_role_code != curr_role_code:
+                        data["roles"][member] = new_role_code
+                        save_data(data)
+                        st.rerun()
+
+                with c_act:
                     if st.button("❌", key=f"pre_del_{i}"): st.session_state[f"confirm_del_{i}"] = True
+                
                 if st.session_state.get(f"confirm_del_{i}", False):
                     st.write("Supprimer ?")
                     c1, c2 = st.columns(2)
                     if c1.button("Oui", key=f"y_{i}", type="primary", use_container_width=True):
                         data["equipe"].pop(i)
+                        if member in data["roles"]: del data["roles"][member]
                         save_data(data)
                         st.rerun()
                     if c2.button("Non", key=f"n_{i}", use_container_width=True):
