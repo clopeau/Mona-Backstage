@@ -11,6 +11,7 @@ import time
 st.set_page_config(page_title="Mona Backstage", layout="centered", page_icon="👗")
 DATA_FILE = "mona_db_v3.json"
 GLOBAL_PASSWORD = "mona"
+SHORT_URL = "https://m-drs.fr/1Tv"
 
 # --- CSS / STYLE ---
 st.markdown("""
@@ -18,6 +19,18 @@ st.markdown("""
     div[data-testid="column"] button { width: 100% !important; }
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
     .compact-hr { margin-top: 5px !important; margin-bottom: 5px !important; border: 0; border-top: 1px solid #e0e0e0; }
+    /* Style pour les boutons WhatsApp */
+    .wa-btn {
+        text-decoration: none;
+        background-color: #25D366;
+        color: white !important;
+        padding: 10px 20px;
+        border-radius: 8px;
+        display: block;
+        text-align: center;
+        font-weight: bold;
+        margin-top: 20px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -60,103 +73,110 @@ def generer_structure_vide(lundi_date):
         curr += timedelta(days=1)
     return slots
 
-def generer_lien_whatsapp(slots):
+# --- NOUVELLES FONCTIONS WHATSAPP ---
+
+def generer_wa_structure(slots):
+    """Génère le message 'Teaser' pour la structure (sans les noms)"""
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
-    lines = ["*👗 LIVE PLANNER - MONA DRESS 👗*", ""]
+    
+    lines = [
+        "✨ *Hello la Team !*", 
+        "",
+        "📅 La grille des Lives est prête !",
+        f"👉 Connectez-vous pour mettre vos dispos : {SHORT_URL}",
+        "",
+        "*Au programme cette semaine :*"
+    ]
+    
+    # Regroupement par jour
+    current_day = ""
+    for slot in slots_actifs:
+        short_date = "/".join(slot['date'].split("/")[:2])
+        if slot['jour'] != current_day:
+            lines.append(f"🔹 *{slot['jour']} ({short_date})*")
+            current_day = slot['jour']
+        
+        lines.append(f"   ⏰ {slot['heure']}")
+    
+    lines.append("")
+    lines.append("A vos agendas ! 🏃‍♀️💨")
+    
+    full_text = "\n".join(lines)
+    return f"https://wa.me/?text={urllib.parse.quote(full_text)}"
+
+def generer_wa_casting(slots):
+    """Génère le message 'Final' avec le casting complet"""
+    slots_actifs = [s for s in slots if s.get('actif', True)]
+    if not slots_actifs: return "https://wa.me/"
+    
+    lines = [
+        "🎬 *PLANNING OFFICIEL MONA DRESS*",
+        "",
+        "Le casting est bouclé ! 🔥",
+        f"Retrouvez le planning ici : {SHORT_URL}",
+        "",
+    ]
+    
     for slot in slots_actifs:
         short_date = "/".join(slot['date'].split("/")[:2])
         header = f"🗓️ *{slot['jour']} {slot['heure']}* ({short_date})"
+        
         l_cam = slot['elu_cam'] if isinstance(slot['elu_cam'], list) else []
         l_voix = slot['elu_voix'] if isinstance(slot['elu_voix'], list) else [slot['elu_voix']] if slot['elu_voix'] else []
+        
         lines.append(header)
-        lines.append(f"🎥 Cam: {', '.join(l_cam) if l_cam else '❓'}")
-        lines.append(f"🎙️ Voix: {', '.join(l_voix) if l_voix else '❓'}")
+        lines.append(f"🎥 {', '.join(l_cam) if l_cam else '❓'}")
+        lines.append(f"🎙️ {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
-    lines.append("Merci les filles ! ✨")
+    
+    lines.append("Bon live à toutes ! 💪")
+    
     full_text = "\n".join(lines)
-    encoded_text = urllib.parse.quote(full_text)
-    return f"https://wa.me/?text={encoded_text}"
+    return f"https://wa.me/?text={urllib.parse.quote(full_text)}"
 
-# --- CHARGEMENT DONNÉES ---
+# --- CHARGEMENT ---
 data = load_data()
-
-# IMPORTANT : Clé unique pour le gestionnaire pour éviter les conflits
-cookie_manager = stx.CookieManager(key="mona_cookie_manager")
+cookie_manager = stx.CookieManager(key="mona_mgr")
 long_expire = datetime.now() + timedelta(days=3650)
 
-# =========================================================
-# 1. MUR DE MOT DE PASSE (CORRIGÉ AVEC SESSION STATE)
-# =========================================================
-
-# On vérifie d'abord la session (immédiat)
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-# On vérifie ensuite le cookie (long terme)
+# 1. LOGIN
+if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
 auth_cookie = cookie_manager.get(cookie="mona_access")
-if auth_cookie == "granted":
-    st.session_state["authenticated"] = True
+if auth_cookie == "granted": st.session_state["authenticated"] = True
 
-# Si ni l'un ni l'autre n'est bon, on affiche le login
 if not st.session_state["authenticated"]:
     st.title("🔒 Accès Privé")
     pwd_input = st.text_input("Mot de passe", type="password")
-    
     if st.button("Entrer", type="primary"):
         if pwd_input == GLOBAL_PASSWORD:
-            # 1. On lance l'écriture du cookie
             cookie_manager.set("mona_access", "granted", expires_at=long_expire)
-            # 2. On valide la session pour passer tout de suite
             st.session_state["authenticated"] = True
             st.success("Accès autorisé")
-            time.sleep(1) # Petit temps pour que le cookie parte
+            time.sleep(1)
             st.rerun()
-        else:
-            st.error("Mot de passe incorrect")
-    st.stop() # Arrêt du script ici si pas connecté
+        else: st.error("Non.")
+    st.stop()
 
-# =========================================================
-# 2. MUR D'IDENTITÉ (PERSISTANT)
-# =========================================================
-
-# Même logique : Session (immédiat) + Cookie (long terme)
-if "current_user" not in st.session_state:
-    st.session_state["current_user"] = None
-
+# 2. IDENTITÉ
+if "current_user" not in st.session_state: st.session_state["current_user"] = None
 identity_cookie = cookie_manager.get(cookie="mona_whoami")
+if identity_cookie and identity_cookie in data["equipe"]: st.session_state["current_user"] = identity_cookie
 
-# Si le cookie existe et est valide, il prime
-if identity_cookie and identity_cookie in data["equipe"]:
-    st.session_state["current_user"] = identity_cookie
-
-# Si on ne sait toujours pas qui c'est
 if not st.session_state["current_user"]:
     st.title("👋 Qui es-tu ?")
-    st.info("Identifie-toi pour accéder au planning :")
-    
     user_choice = st.selectbox("Je suis :", ["Choisir..."] + data["equipe"])
-    
     if user_choice != "Choisir...":
         cookie_manager.set("mona_whoami", user_choice, expires_at=long_expire)
         st.session_state["current_user"] = user_choice
-        st.success(f"Enchanté {user_choice} !")
-        time.sleep(1)
         st.rerun()
     st.stop()
 
-# On récupère l'user validé pour le reste du script
 current_user = st.session_state["current_user"]
 
-
-# =========================================================
-# 3. APPLICATION PRINCIPALE
-# =========================================================
-
+# --- APP ---
 st.sidebar.title("Mona Backstage")
 st.sidebar.success(f"👤 **{current_user}**")
-
-# Changement d'utilisateur
 with st.sidebar.expander("Changer d'utilisateur"):
     change_user = st.selectbox("Identité", data["equipe"], index=data["equipe"].index(current_user))
     if change_user != current_user:
@@ -164,16 +184,14 @@ with st.sidebar.expander("Changer d'utilisateur"):
         st.session_state["current_user"] = change_user
         time.sleep(0.5)
         st.rerun()
-
 st.sidebar.markdown("---")
 mode_view = st.sidebar.radio("Navigation", ["Artiste", "Boss"])
 
-# --- DATES ---
+# DATES
 today = datetime.now()
 monday_current = get_monday(today)
 monday_next = monday_current + timedelta(days=7)
 monday_next_2 = monday_current + timedelta(days=14)
-
 choix_semaines = {
     f"Semaine en cours ({monday_current.strftime('%d/%m')})": date_to_str(monday_current),
     f"Semaine prochaine ({monday_next.strftime('%d/%m')})": date_to_str(monday_next),
@@ -235,62 +253,111 @@ elif mode_view == "Boss":
     
     if selected_week_key not in data["weeks"]: slots_current_work = generer_structure_vide(str_to_date(selected_week_key))
     else: slots_current_work = data["weeks"][selected_week_key]
-        
-    t1, t2, t3, t4 = st.tabs(["🛠️ Structure", "🎬 Casting", "📢 Whatsapp", "👥 Équipe"])
     
+    # 3 ONGLETS (WhatsApp supprimé en tant qu'onglet)
+    t1, t2, t3 = st.tabs(["🛠️ Structure", "🎬 Casting", "👥 Équipe"])
+    
+    # --- TAB 1 : STRUCTURE (AutoSave) ---
     with t1:
-        st.caption("Configurer les horaires")
+        st.caption("Configurer les horaires (Sauvegarde auto)")
+        
+        # Variable pour détecter s'il y a eu un changement
+        changes_detected = False
+        
         for i in range(0, len(slots_current_work), 2):
             slot_m = slots_current_work[i]
             slot_s = slots_current_work[i+1]
             short_date = "/".join(slot_m['date'].split("/")[:2])
+            
             with st.container(border=True):
                 st.markdown(f"<h4 style='margin:0; padding:0;'>{slot_m['jour']} ({short_date})</h4>", unsafe_allow_html=True)
+                
+                # MIDI
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
-                is_active_m = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
-                if is_active_m: st.text_input("Heure Midi", value=slot_m['heure'], key=f"hm_{slot_m['id']}", label_visibility="collapsed")
+                # Toggle
+                m_active = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
+                if m_active != slot_m.get('actif', True):
+                    slot_m['actif'] = m_active
+                    changes_detected = True
+                
+                # Input Time
+                if m_active:
+                    m_heure = st.text_input("Heure M", value=slot_m['heure'], key=f"hm_{slot_m['id']}", label_visibility="collapsed")
+                    if m_heure != slot_m['heure']:
+                        slot_m['heure'] = m_heure
+                        changes_detected = True
                 else: st.caption("💤 Off")
+                
+                # SOIR
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
-                is_active_s = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
-                if is_active_s: st.text_input("Heure Soir", value=slot_s['heure'], key=f"hs_{slot_s['id']}", label_visibility="collapsed")
+                # Toggle
+                s_active = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
+                if s_active != slot_s.get('actif', True):
+                    slot_s['actif'] = s_active
+                    changes_detected = True
+                
+                # Input Time
+                if s_active:
+                    s_heure = st.text_input("Heure S", value=slot_s['heure'], key=f"hs_{slot_s['id']}", label_visibility="collapsed")
+                    if s_heure != slot_s['heure']:
+                        slot_s['heure'] = s_heure
+                        changes_detected = True
                 else: st.caption("💤 Off")
-        if st.button("💾 Enregistrer Structure", type="primary", use_container_width=True):
-            for slot in slots_current_work:
-                k_act = f"tg_{slot['id']}"
-                if k_act in st.session_state:
-                    slot['actif'] = st.session_state[k_act]
-                    if slot['actif']:
-                        prefix = "hm" if "matin" in slot['id'] else "hs"
-                        k_hr = f"{prefix}_{slot['id']}"
-                        if k_hr in st.session_state: slot['heure'] = st.session_state[k_hr]
+
+        # SAUVEGARDE AUTO (Si changement détecté durant le rerun)
+        if changes_detected:
             data["weeks"][selected_week_key] = slots_current_work
             save_data(data)
-            st.success("Sauvegardé !")
+            # Pas de rerun pour ne pas couper la saisie, mais c'est sauvé.
 
+        st.markdown("---")
+        # BOUTON WHATSAPP STRUCTURE
+        link_struct = generer_wa_structure(slots_current_work)
+        st.markdown(f"""<a href="{link_struct}" target="_blank" class="wa-btn">📢 Envoyer l'ouverture des dispos (WhatsApp)</a>""", unsafe_allow_html=True)
+
+
+    # --- TAB 2 : CASTING (AutoSave) ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots: st.warning("Pas de créneaux actifs.")
-        elif selected_week_key not in data["weeks"]: st.warning("Sauvegardez la structure.")
         else:
+            changes_casting = False
+            
             for s in active_slots:
                 with st.expander(format_titre_slot(s) + f" - ({len(s['candidats_cam'])})", expanded=True):
+                    
+                    # CAM
                     curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
-                    s['elu_cam'] = st.multiselect("🎥 Caméra", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=f"mc_{s['id']}")
+                    new_cam = st.multiselect("🎥 Caméra", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=f"mc_{s['id']}")
+                    if new_cam != curr_cam:
+                        s['elu_cam'] = new_cam
+                        changes_casting = True
+                        
                     if s['candidats_cam']: st.caption(f"✋ Dispos: {', '.join(s['candidats_cam'])}")
+                    
                     st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
+                    
+                    # VOIX
                     curr_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
-                    s['elu_voix'] = st.multiselect("🎙️ Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=f"mv_{s['id']}")
-            if st.button("💾 Sauvegarder Casting", use_container_width=True):
+                    new_voix = st.multiselect("🎙️ Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=f"mv_{s['id']}")
+                    if new_voix != curr_voix:
+                        s['elu_voix'] = new_voix
+                        changes_casting = True
+            
+            # SAUVEGARDE AUTO CASTING
+            if changes_casting:
+                # On s'assure que la structure existe dans data avant de sauver
+                data["weeks"][selected_week_key] = slots_current_work
                 save_data(data)
-                st.success("Casting OK !")
 
+            st.markdown("---")
+            # BOUTON WHATSAPP CASTING
+            link_cast = generer_wa_casting(slots_current_work)
+            st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer le planning final (WhatsApp)</a>""", unsafe_allow_html=True)
+
+
+    # --- TAB 3 : EQUIPE ---
     with t3:
-        if selected_week_key in data["weeks"]:
-            link = generer_lien_whatsapp(data["weeks"][selected_week_key])
-            st.markdown(f"### [👉 WhatsApp]({link})")
-        else: st.error("Sauvegardez structure.")
-
-    with t4:
         st.subheader("Team")
         with st.form("add_member", clear_on_submit=True):
             new = st.text_input("Nouveau membre", placeholder="Prénom")
