@@ -16,12 +16,10 @@ SHORT_URL = "https://m-drs.fr/1Tv"
 # --- CSS / STYLE ---
 st.markdown("""
     <style>
-    /* Mobile et Structure */
     div[data-testid="column"] button { width: 100% !important; }
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
     .compact-hr { margin-top: 5px !important; margin-bottom: 5px !important; border: 0; border-top: 1px solid #e0e0e0; }
     
-    /* 1. VIGNETTES SÉLECTIONNÉES (Multiselect) -> VERT */
     span[data-baseweb="tag"] {
         background-color: #e8f5e9 !important;
         border: 1px solid #c8e6c9 !important;
@@ -31,7 +29,6 @@ st.markdown("""
         font-weight: bold;
     }
 
-    /* 2. BOUTONS DISPOS (Candidats) -> ORANGE */
     div[data-testid="column"] button[kind="secondary"] {
         background-color: #fff3e0 !important;
         border: 1px solid #ffcc80 !important;
@@ -43,7 +40,6 @@ st.markdown("""
         border-color: #ef6c00 !important;
     }
 
-    /* Bouton WhatsApp */
     .wa-btn {
         text-decoration: none; background-color: #25D366; color: white !important;
         padding: 10px 20px; border-radius: 8px; display: block;
@@ -73,6 +69,16 @@ def is_future(slot):
         slot_dt = datetime.strptime(f"{slot['date']} {slot['heure']}", "%d/%m/%Y %H:%M")
         return slot_dt > datetime.now()
     except: return True
+
+# --- CALLBACK POUR LE CASTING (CORRECTION BUG) ---
+def ajouter_candidat_callback(widget_key, candidat_nom):
+    """Fonction appelée AVANT le rechargement de la page"""
+    # On récupère la liste actuelle dans le widget
+    current_list = st.session_state.get(widget_key, [])
+    # On ajoute le candidat s'il n'y est pas déjà
+    if candidat_nom not in current_list:
+        current_list.append(candidat_nom)
+        st.session_state[widget_key] = current_list
 
 def load_data():
     default_data = {"weeks": {}, "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"]}
@@ -323,7 +329,7 @@ elif mode_view == "Boss":
         st.markdown(f"""<a href="{link_struct}" target="_blank" class="wa-btn">📢 Envoyer ouverture (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- TAB 2 : CASTING (FORCE UPDATE FIX) ---
+    # --- TAB 2 : CASTING (AVEC CALLBACK) ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots: st.warning("Pas de créneaux actifs.")
@@ -337,25 +343,23 @@ elif mode_view == "Boss":
                     curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
                     key_ms_cam = f"mc_{s['id']}"
                     
+                    # Multiselect (State-aware)
                     new_cam = st.multiselect("Select Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=key_ms_cam, label_visibility="collapsed")
+                    
+                    # Détection changement manuel via multiselect
                     if new_cam != curr_cam:
                         s['elu_cam'] = new_cam
                         changes_casting = True
-                        curr_cam = new_cam
+                        curr_cam = new_cam # Update local
                     
+                    # Boutons Candidats
                     cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam]
                     if cand_cam:
                         st.write("**Dispo :**")
                         cols_c = st.columns(min(len(cand_cam), 4))
                         for i, cand in enumerate(cand_cam):
-                            if cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary"):
-                                if cand not in s['elu_cam']:
-                                    s['elu_cam'].append(cand)
-                                    # FORCE UPDATE SESSION STATE
-                                    st.session_state[key_ms_cam] = s['elu_cam']
-                                    data["weeks"][selected_week_key] = slots_current_work
-                                    save_data(data)
-                                    st.rerun()
+                            # CALLBACK ICI
+                            cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_cam, cand))
 
                     st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                     
@@ -365,6 +369,7 @@ elif mode_view == "Boss":
                     key_ms_voix = f"mv_{s['id']}"
                     
                     new_voix = st.multiselect("Select Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=key_ms_voix, label_visibility="collapsed")
+                    
                     if new_voix != curr_voix:
                         s['elu_voix'] = new_voix
                         changes_casting = True
@@ -375,15 +380,12 @@ elif mode_view == "Boss":
                         st.write("**Dispo :**")
                         cols_v = st.columns(min(len(cand_voix), 4))
                         for i, cand in enumerate(cand_voix):
-                            if cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary"):
-                                if cand not in s['elu_voix']:
-                                    s['elu_voix'].append(cand)
-                                    # FORCE UPDATE SESSION STATE
-                                    st.session_state[key_ms_voix] = s['elu_voix']
-                                    data["weeks"][selected_week_key] = slots_current_work
-                                    save_data(data)
-                                    st.rerun()
+                            # CALLBACK ICI
+                            cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_voix, cand))
             
+            # SAUVEGARDE GLOBALE
+            # Si le multiselect a changé, on sauve. 
+            # Si le bouton a été cliqué, le callback a update le session state -> le multiselect a changé au rerun -> on passe ici -> on sauve.
             if changes_casting:
                 data["weeks"][selected_week_key] = slots_current_work
                 save_data(data)
