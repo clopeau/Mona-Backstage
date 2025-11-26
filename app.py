@@ -55,14 +55,7 @@ def is_future(slot):
     except: return True
 
 # --- LOGIQUE ROLES ---
-# both = Polyvalent (défaut), cam = Caméra, voix = Voix
-def get_role_icon(role):
-    if role == "cam": return "🎥"
-    if role == "voix": return "🎙️"
-    return "🌟"
-
 def is_compatible(member_name, target_role, data):
-    # Récupère le rôle, par défaut "both" pour la rétrocompatibilité
     user_role = data.get("roles", {}).get(member_name, "both")
     if user_role == "both": return True
     return user_role == target_role
@@ -78,7 +71,7 @@ def load_data():
     default_data = {
         "weeks": {}, 
         "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"],
-        "roles": {} # Nouveau dictionnaire pour les rôles
+        "roles": {} 
     }
     if not os.path.exists(DATA_FILE): data = default_data
     else:
@@ -87,7 +80,7 @@ def load_data():
                 data = json.load(f)
                 if "weeks" not in data: data["weeks"] = {}
                 if "equipe" not in data: data["equipe"] = default_data["equipe"]
-                if "roles" not in data: data["roles"] = {} # Rétrocompatibilité
+                if "roles" not in data: data["roles"] = {} 
         except: data = default_data
     
     if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
@@ -124,7 +117,11 @@ def generer_wa_structure(slots):
         lines.append(f"   ⏰ {slot['heure']}")
     lines.append("")
     lines.append("A vos agendas ! 🚀")
-    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
+    
+    # CORRECTION ICI
+    full_text = "\n".join(lines)
+    encoded = urllib.parse.quote(full_text)
+    return f"https://wa.me/?text={encoded}"
 
 def generer_wa_casting(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
@@ -139,7 +136,11 @@ def generer_wa_casting(slots):
         lines.append(f"🎙️ {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
     lines.append("Bon live à toutes ! 💪")
-    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
+    
+    # CORRECTION ICI
+    full_text = "\n".join(lines)
+    encoded = urllib.parse.quote(full_text)
+    return f"https://wa.me/?text={encoded}"
 
 # --- CHARGEMENT ---
 data = load_data()
@@ -334,7 +335,7 @@ elif mode_view == "Boss":
                         changes_casting = True
                         curr_cam = new_cam
                     
-                    # FILTRE ET AFFICHAGE BOUTONS (CAM)
+                    # FILTRE ROLE (CAM)
                     cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam and is_compatible(c, "cam", data)]
                     if cand_cam:
                         st.write("**Dispo :**")
@@ -356,7 +357,7 @@ elif mode_view == "Boss":
                         changes_casting = True
                         curr_voix = new_voix
                     
-                    # FILTRE ET AFFICHAGE BOUTONS (VOIX)
+                    # FILTRE ROLE (VOIX)
                     cand_voix = [c for c in s['candidats_voix'] if c not in curr_voix and is_compatible(c, "voix", data)]
                     if cand_voix:
                         st.write("**Dispo :**")
@@ -374,59 +375,42 @@ elif mode_view == "Boss":
             st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- EQUIPE (GESTION RÔLES) ---
+    # --- EQUIPE (ROLES) ---
     with t3:
         st.subheader("Gérer la Team")
         
-        # Ajout avec Rôle
         with st.form("add_member", clear_on_submit=True):
             c1, c2, c3 = st.columns([3, 2, 1])
             new = c1.text_input("Nom", placeholder="Nom", label_visibility="collapsed")
-            # Sélection du rôle à la création
             role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
             if c3.form_submit_button("Ajouter"):
                 if new:
                     data["equipe"].append(new)
-                    # Mapping du rôle
                     r_code = "both"
                     if "Caméra" in role: r_code = "cam"
                     if "Voix" in role: r_code = "voix"
                     data["roles"][new] = r_code
-                    
                     save_data(data)
                     st.rerun()
         
         st.markdown("---")
         
-        # Liste avec Modification de Rôle
         for i, member in enumerate(data["equipe"]):
             with st.container(border=True):
                 c_nom, c_role, c_act = st.columns([3, 2, 1])
-                
-                with c_nom:
-                    st.markdown(f"**{member}**")
-                
+                with c_nom: st.markdown(f"**{member}**")
                 with c_role:
-                    # On récupère le rôle actuel
                     curr_role_code = data["roles"].get(member, "both")
-                    # Index pour le selectbox
                     opts = ["both", "cam", "voix"]
                     labels = ["🌟", "🎥", "🎙️"]
                     try: idx = opts.index(curr_role_code)
                     except: idx = 0
-                    
-                    # Changement direct du rôle
                     new_role_lbl = st.selectbox("Rôle", labels, index=idx, key=f"role_{i}", label_visibility="collapsed")
-                    
-                    # Mapping inverse
                     new_role_code = opts[labels.index(new_role_lbl)]
-                    
-                    # Si changement, sauvegarde directe
                     if new_role_code != curr_role_code:
                         data["roles"][member] = new_role_code
                         save_data(data)
                         st.rerun()
-
                 with c_act:
                     if st.button("❌", key=f"pre_del_{i}"): st.session_state[f"confirm_del_{i}"] = True
                 
