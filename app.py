@@ -275,18 +275,22 @@ elif mode_view == "Boss":
     with t1:
         st.caption("Configurer les horaires (Sauvegarde auto)")
         changes_detected = False
+        
         for i in range(0, len(slots_current_work), 2):
             slot_m = slots_current_work[i]
             slot_s = slots_current_work[i+1]
             short_date = "/".join(slot_m['date'].split("/")[:2])
+            
             with st.container(border=True):
                 st.markdown(f"<h4 style='margin:0; padding:0;'>{slot_m['jour']} ({short_date})</h4>", unsafe_allow_html=True)
                 
+                # MIDI
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 m_active = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
                 if m_active != slot_m.get('actif', True):
                     slot_m['actif'] = m_active
                     changes_detected = True
+                
                 if m_active:
                     idx_m = TIME_OPTIONS.index(slot_m['heure']) if slot_m['heure'] in TIME_OPTIONS else TIME_OPTIONS.index("12:00")
                     m_heure = st.selectbox("Heure M", TIME_OPTIONS, index=idx_m, key=f"hm_{slot_m['id']}", label_visibility="collapsed")
@@ -295,11 +299,13 @@ elif mode_view == "Boss":
                         changes_detected = True
                 else: st.caption("💤 Off")
                 
+                # SOIR
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 s_active = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
                 if s_active != slot_s.get('actif', True):
                     slot_s['actif'] = s_active
                     changes_detected = True
+                
                 if s_active:
                     idx_s = TIME_OPTIONS.index(slot_s['heure']) if slot_s['heure'] in TIME_OPTIONS else TIME_OPTIONS.index("18:30")
                     s_heure = st.selectbox("Heure S", TIME_OPTIONS, index=idx_s, key=f"hs_{slot_s['id']}", label_visibility="collapsed")
@@ -317,7 +323,7 @@ elif mode_view == "Boss":
         st.markdown(f"""<a href="{link_struct}" target="_blank" class="wa-btn">📢 Envoyer ouverture (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- TAB 2 : CASTING (FIXED) ---
+    # --- TAB 2 : CASTING (FORCE UPDATE FIX) ---
     with t2:
         active_slots = [s for s in slots_current_work if s.get('actif', True)]
         if not active_slots: st.warning("Pas de créneaux actifs.")
@@ -329,31 +335,27 @@ elif mode_view == "Boss":
                     # --- CAMÉRA ---
                     st.write("🎥 **Caméra**")
                     curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
-                    # Clé unique pour le multiselect
                     key_ms_cam = f"mc_{s['id']}"
-                    new_cam = st.multiselect("Select Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=key_ms_cam, label_visibility="collapsed")
                     
+                    new_cam = st.multiselect("Select Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=key_ms_cam, label_visibility="collapsed")
                     if new_cam != curr_cam:
                         s['elu_cam'] = new_cam
                         changes_casting = True
                         curr_cam = new_cam
                     
-                    # BOUTONS CANDIDATS CAM
                     cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam]
                     if cand_cam:
                         st.write("**Dispo :**")
                         cols_c = st.columns(min(len(cand_cam), 4))
                         for i, cand in enumerate(cand_cam):
-                            # FIX : AJOUTER DIRECTEMENT DANS LE SESSION_STATE
                             if cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary"):
-                                s['elu_cam'].append(cand)
-                                # On force la mise à jour du widget Multiselect pour le prochain rechargement
-                                if key_ms_cam in st.session_state:
-                                    st.session_state[key_ms_cam].append(cand)
-                                
-                                data["weeks"][selected_week_key] = slots_current_work
-                                save_data(data)
-                                st.rerun()
+                                if cand not in s['elu_cam']:
+                                    s['elu_cam'].append(cand)
+                                    # FORCE UPDATE SESSION STATE
+                                    st.session_state[key_ms_cam] = s['elu_cam']
+                                    data["weeks"][selected_week_key] = slots_current_work
+                                    save_data(data)
+                                    st.rerun()
 
                     st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                     
@@ -361,27 +363,26 @@ elif mode_view == "Boss":
                     st.write("🎙️ **Voix**")
                     curr_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
                     key_ms_voix = f"mv_{s['id']}"
-                    new_voix = st.multiselect("Select Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=key_ms_voix, label_visibility="collapsed")
                     
+                    new_voix = st.multiselect("Select Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=key_ms_voix, label_visibility="collapsed")
                     if new_voix != curr_voix:
                         s['elu_voix'] = new_voix
                         changes_casting = True
                         curr_voix = new_voix
                     
-                    # BOUTONS CANDIDATS VOIX
                     cand_voix = [c for c in s['candidats_voix'] if c not in curr_voix]
                     if cand_voix:
                         st.write("**Dispo :**")
                         cols_v = st.columns(min(len(cand_voix), 4))
                         for i, cand in enumerate(cand_voix):
                             if cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary"):
-                                s['elu_voix'].append(cand)
-                                if key_ms_voix in st.session_state:
-                                    st.session_state[key_ms_voix].append(cand)
-                                    
-                                data["weeks"][selected_week_key] = slots_current_work
-                                save_data(data)
-                                st.rerun()
+                                if cand not in s['elu_voix']:
+                                    s['elu_voix'].append(cand)
+                                    # FORCE UPDATE SESSION STATE
+                                    st.session_state[key_ms_voix] = s['elu_voix']
+                                    data["weeks"][selected_week_key] = slots_current_work
+                                    save_data(data)
+                                    st.rerun()
             
             if changes_casting:
                 data["weeks"][selected_week_key] = slots_current_work
