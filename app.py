@@ -48,10 +48,12 @@ def format_titre_slot(slot):
     short_date = "/".join(slot['date'].split("/")[:2])
     return f"**{slot['jour']} {slot['heure']}** ({short_date})"
 
-def is_future(slot):
+def is_today_or_future(slot):
+    """Vérifie si la DATE du slot est aujourd'hui ou plus tard (ignore l'heure)"""
     try:
-        slot_dt = datetime.strptime(f"{slot['date']} {slot['heure']}", "%d/%m/%Y %H:%M")
-        return slot_dt > datetime.now()
+        slot_date = datetime.strptime(slot['date'], "%d/%m/%Y").date()
+        now_date = datetime.now().date()
+        return slot_date >= now_date
     except: return True
 
 # --- LOGIQUE ROLES ---
@@ -117,8 +119,6 @@ def generer_wa_structure(slots):
         lines.append(f"   ⏰ {slot['heure']}")
     lines.append("")
     lines.append("A vos agendas ! 🚀")
-    
-    # CORRECTION ICI
     full_text = "\n".join(lines)
     encoded = urllib.parse.quote(full_text)
     return f"https://wa.me/?text={encoded}"
@@ -136,8 +136,6 @@ def generer_wa_casting(slots):
         lines.append(f"🎙️ {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
     lines.append("Bon live à toutes ! 💪")
-    
-    # CORRECTION ICI
     full_text = "\n".join(lines)
     encoded = urllib.parse.quote(full_text)
     return f"https://wa.me/?text={encoded}"
@@ -212,15 +210,28 @@ if mode_view == "Artiste":
     tab_visu, tab_voeux = st.tabs(["📅 Timeline", "✍️ Mes Dispos"])
     
     with tab_visu:
+        # Toggle Filtre
+        show_only_mine = st.toggle("👁️ Voir uniquement mes lives", value=False)
+        st.markdown("---")
+
         all_future_slots = []
         weeks_to_check = [date_to_str(monday_current), date_to_str(monday_next), date_to_str(monday_next_2)]
+        
         for w_key in weeks_to_check:
             if w_key in data["weeks"]:
                 for s in data["weeks"][w_key]:
-                    if s.get('actif', True) and is_future(s):
-                        all_future_slots.append(s)
+                    if s.get('actif', True) and is_today_or_future(s):
+                        # FILTRAGE ICI
+                        l_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
+                        l_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
+                        
+                        if show_only_mine:
+                            if (current_user in l_cam) or (current_user in l_voix):
+                                all_future_slots.append(s)
+                        else:
+                            all_future_slots.append(s)
         
-        if not all_future_slots: st.info("Aucun live à venir.")
+        if not all_future_slots: st.info("Aucun live trouvé.")
         else:
             for slot in all_future_slots:
                 with st.container(border=True):
@@ -326,17 +337,18 @@ elif mode_view == "Boss":
                     
                     # --- CAMÉRA ---
                     st.write("🎥 **Caméra**")
-                    curr_cam = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
                     key_ms_cam = f"mc_{s['id']}"
                     
-                    new_cam = st.multiselect("Select Cam", data["equipe"], default=[p for p in curr_cam if p in data["equipe"]], key=key_ms_cam, label_visibility="collapsed")
-                    if new_cam != curr_cam:
+                    if key_ms_cam not in st.session_state:
+                        st.session_state[key_ms_cam] = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
+                    
+                    new_cam = st.multiselect("Select Cam", data["equipe"], key=key_ms_cam, label_visibility="collapsed")
+                    
+                    if new_cam != s['elu_cam']:
                         s['elu_cam'] = new_cam
                         changes_casting = True
-                        curr_cam = new_cam
                     
-                    # FILTRE ROLE (CAM)
-                    cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam and is_compatible(c, "cam", data)]
+                    cand_cam = [c for c in s['candidats_cam'] if c not in new_cam and is_compatible(c, "cam", data)]
                     if cand_cam:
                         st.write("**Dispo :**")
                         cols_c = st.columns(min(len(cand_cam), 4))
@@ -348,17 +360,18 @@ elif mode_view == "Boss":
                     
                     # --- VOIX ---
                     st.write("🎙️ **Voix**")
-                    curr_voix = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
                     key_ms_voix = f"mv_{s['id']}"
                     
-                    new_voix = st.multiselect("Select Voix", data["equipe"], default=[p for p in curr_voix if p in data["equipe"]], key=key_ms_voix, label_visibility="collapsed")
-                    if new_voix != curr_voix:
+                    if key_ms_voix not in st.session_state:
+                        st.session_state[key_ms_voix] = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
+                    
+                    new_voix = st.multiselect("Select Voix", data["equipe"], key=key_ms_voix, label_visibility="collapsed")
+                    
+                    if new_voix != s['elu_voix']:
                         s['elu_voix'] = new_voix
                         changes_casting = True
-                        curr_voix = new_voix
                     
-                    # FILTRE ROLE (VOIX)
-                    cand_voix = [c for c in s['candidats_voix'] if c not in curr_voix and is_compatible(c, "voix", data)]
+                    cand_voix = [c for c in s['candidats_voix'] if c not in new_voix and is_compatible(c, "voix", data)]
                     if cand_voix:
                         st.write("**Dispo :**")
                         cols_v = st.columns(min(len(cand_voix), 4))
@@ -375,7 +388,7 @@ elif mode_view == "Boss":
             st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- EQUIPE (ROLES) ---
+    # --- EQUIPE ---
     with t3:
         st.subheader("Gérer la Team")
         
