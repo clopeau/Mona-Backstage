@@ -56,10 +56,13 @@ def format_titre_slot(slot):
 def is_future(slot):
     """Vérifie si le slot est dans le futur par rapport à maintenant"""
     try:
+        # On ajoute l'année courante pour la comparaison
+        current_year = datetime.now().year
+        # slot['date'] est jj/mm/aaaa
         slot_dt = datetime.strptime(f"{slot['date']} {slot['heure']}", "%d/%m/%Y %H:%M")
         return slot_dt > datetime.now()
     except:
-        return True # Par sécurité si erreur de format
+        return True
 
 def load_data():
     default_data = {"weeks": {}, "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"]}
@@ -95,6 +98,7 @@ def generer_structure_vide(lundi_date):
 def generer_wa_structure(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
+    
     lines = ["✨ *HELLO LA TEAM !* ✨", "", "📅 La grille des Lives est ouverte !", f"👉 Mettez vos dispos ici : {SHORT_URL}", "", "*Au programme cette semaine :*"]
     current_day = ""
     for slot in slots_actifs:
@@ -105,11 +109,16 @@ def generer_wa_structure(slots):
         lines.append(f"   ⏰ {slot['heure']}")
     lines.append("")
     lines.append("A vos agendas ! 🚀")
-    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
+    
+    # CORRECTION COMPATIBILITÉ PYTHON
+    full_text = "\n".join(lines)
+    encoded = urllib.parse.quote(full_text)
+    return f"https://wa.me/?text={encoded}"
 
 def generer_wa_casting(slots):
     slots_actifs = [s for s in slots if s.get('actif', True)]
     if not slots_actifs: return "https://wa.me/"
+    
     lines = ["🎬 *PLANNING OFFICIEL MONA DRESS* 🎬", "", "Le casting est validé ! 🔥", f"👀 Voir sur l'app : {SHORT_URL}", ""]
     for slot in slots_actifs:
         short_date = "/".join(slot['date'].split("/")[:2])
@@ -120,7 +129,11 @@ def generer_wa_casting(slots):
         lines.append(f"🎙️ {', '.join(l_voix) if l_voix else '❓'}")
         lines.append("")
     lines.append("Bon live à toutes ! 💪")
-    return f"https://wa.me/?text={urllib.parse.quote('\n'.join(lines))}"
+    
+    # CORRECTION COMPATIBILITÉ PYTHON
+    full_text = "\n".join(lines)
+    encoded = urllib.parse.quote(full_text)
+    return f"https://wa.me/?text={encoded}"
 
 # --- CHARGEMENT ---
 data = load_data()
@@ -196,13 +209,11 @@ if mode_view == "Artiste":
     
     # --- TAB 1 : TIMELINE (FUTUR UNIQUEMENT) ---
     with tab_visu:
-        # On agrège les 3 semaines gérées
         all_future_slots = []
         weeks_to_check = [date_to_str(monday_current), date_to_str(monday_next), date_to_str(monday_next_2)]
         
         for w_key in weeks_to_check:
             if w_key in data["weeks"]:
-                # On filtre les slots actifs ET dans le futur
                 for s in data["weeks"][w_key]:
                     if s.get('actif', True) and is_future(s):
                         all_future_slots.append(s)
@@ -210,7 +221,6 @@ if mode_view == "Artiste":
         if not all_future_slots:
             st.info("Aucun live à venir pour le moment.")
         else:
-            # Affichage en liste continue
             for slot in all_future_slots:
                 with st.container(border=True):
                     st.markdown(format_titre_slot(slot))
@@ -287,7 +297,6 @@ elif mode_view == "Boss":
                     changes_detected = True
                 
                 if m_active:
-                    # Selectbox avec Time Options
                     idx_m = TIME_OPTIONS.index(slot_m['heure']) if slot_m['heure'] in TIME_OPTIONS else TIME_OPTIONS.index("12:00")
                     m_heure = st.selectbox("Heure M", TIME_OPTIONS, index=idx_m, key=f"hm_{slot_m['id']}", label_visibility="collapsed")
                     if m_heure != slot_m['heure']:
@@ -303,7 +312,6 @@ elif mode_view == "Boss":
                     changes_detected = True
                 
                 if s_active:
-                    # Selectbox avec Time Options
                     idx_s = TIME_OPTIONS.index(slot_s['heure']) if slot_s['heure'] in TIME_OPTIONS else TIME_OPTIONS.index("18:30")
                     s_heure = st.selectbox("Heure S", TIME_OPTIONS, index=idx_s, key=f"hs_{slot_s['id']}", label_visibility="collapsed")
                     if s_heure != slot_s['heure']:
@@ -337,14 +345,13 @@ elif mode_view == "Boss":
                     if new_cam != curr_cam:
                         s['elu_cam'] = new_cam
                         changes_casting = True
-                        curr_cam = new_cam # Update local var for button logic logic
+                        curr_cam = new_cam
                     
-                    # Boutons CANDIDATS (Rouge -> Vert)
+                    # Boutons CANDIDATS
                     cand_cam = [c for c in s['candidats_cam'] if c not in curr_cam]
                     if cand_cam:
-                        cols_c = st.columns(min(len(cand_cam), 4)) # Max 4 par ligne
+                        cols_c = st.columns(min(len(cand_cam), 4))
                         for i, cand in enumerate(cand_cam):
-                            # On utilise l'index modulo pour boucler sur les colonnes
                             if cols_c[i % 4].button(f"🔴 {cand}", key=f"btn_c_{s['id']}_{cand}"):
                                 s['elu_cam'].append(cand)
                                 changes_casting = True
@@ -362,7 +369,6 @@ elif mode_view == "Boss":
                         changes_casting = True
                         curr_voix = new_voix
                     
-                    # Boutons CANDIDATS
                     cand_voix = [c for c in s['candidats_voix'] if c not in curr_voix]
                     if cand_voix:
                         cols_v = st.columns(min(len(cand_voix), 4))
