@@ -275,15 +275,23 @@ elif mode_view == "Boss":
     choix_admin = st.selectbox("Semaine cible :", list(choix_semaines.keys()))
     selected_week_key = choix_semaines[choix_admin]
     
-    if selected_week_key not in data["weeks"]: slots_current_work = generer_structure_vide(str_to_date(selected_week_key))
-    else: slots_current_work = data["weeks"][selected_week_key]
+    # Vérifie si la semaine existe déjà en base
+    week_exists = selected_week_key in data["weeks"]
+
+    if not week_exists: 
+        slots_current_work = generer_structure_vide(str_to_date(selected_week_key))
+        st.info("🆕 Cette semaine est un brouillon. Pense à la 'Publier' ci-dessous pour que l'équipe puisse la voir.")
+    else: 
+        slots_current_work = data["weeks"][selected_week_key]
     
     t1, t2, t3 = st.tabs(["🛠️ Structure", "🎬 Casting", "👥 Équipe"])
     
     # --- STRUCTURE ---
     with t1:
-        st.caption("Configurer les horaires (Sauvegarde auto)")
+        st.caption("Configurer les horaires")
         changes_detected = False
+        
+        # Boucle d'affichage des jours
         for i in range(0, len(slots_current_work), 2):
             slot_m = slots_current_work[i]
             slot_s = slots_current_work[i+1]
@@ -291,6 +299,7 @@ elif mode_view == "Boss":
             with st.container(border=True):
                 st.markdown(f"<h4 style='margin:0; padding:0;'>{slot_m['jour']} ({short_date})</h4>", unsafe_allow_html=True)
                 
+                # Matin
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 m_active = st.toggle("Midi", value=slot_m.get('actif', True), key=f"tg_{slot_m['id']}")
                 if m_active != slot_m.get('actif', True):
@@ -304,6 +313,7 @@ elif mode_view == "Boss":
                         changes_detected = True
                 else: st.caption("💤 Off")
                 
+                # Soir
                 st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
                 s_active = st.toggle("Soir", value=slot_s.get('actif', True), key=f"tg_{slot_s['id']}")
                 if s_active != slot_s.get('actif', True):
@@ -317,75 +327,101 @@ elif mode_view == "Boss":
                         changes_detected = True
                 else: st.caption("💤 Off")
 
+        # Sauvegarde automatique si changement détecté via les toggles
         if changes_detected:
             data["weeks"][selected_week_key] = slots_current_work
             save_data(data)
+            st.rerun() # Force le rechargement pour valider l'état
 
         st.markdown("---")
-        link_struct = generer_wa_structure(slots_current_work)
-        st.markdown(f"""<a href="{link_struct}" target="_blank" class="wa-btn">📢 Envoyer ouverture (WhatsApp)</a>""", unsafe_allow_html=True)
+        
+        # Zone de Publication / Envoi
+        col_pub, col_wa = st.columns(2)
+        
+        with col_pub:
+            # Bouton manuel pour forcer la publication (surtout si c'est une nouvelle semaine sans modif)
+            btn_text = "💾 Publier la semaine" if not week_exists else "💾 Enregistrer"
+            btn_type = "primary" if not week_exists else "secondary"
+            
+            if st.button(btn_text, type=btn_type, use_container_width=True):
+                data["weeks"][selected_week_key] = slots_current_work
+                save_data(data)
+                st.success("Planning publié !")
+                time.sleep(1)
+                st.rerun()
+
+        with col_wa:
+            if week_exists:
+                link_struct = generer_wa_structure(slots_current_work)
+                st.markdown(f"""<a href="{link_struct}" target="_blank" class="wa-btn">📢 WhatsApp</a>""", unsafe_allow_html=True)
+            else:
+                st.warning("☝️ Publie d'abord pour générer le lien WhatsApp.")
 
 
     # --- CASTING ---
     with t2:
-        active_slots = [s for s in slots_current_work if s.get('actif', True)]
-        if not active_slots: st.warning("Pas de créneaux actifs.")
+        # Si la semaine n'est pas enregistrée, on avertit
+        if not week_exists:
+            st.warning("Cette semaine n'est pas encore publiée. Allez dans l'onglet 'Structure' pour la créer.")
         else:
-            changes_casting = False
-            for s in active_slots:
-                with st.expander(format_titre_slot(s) + f" - ({len(s['candidats_cam'])})", expanded=True):
-                    
-                    # --- CAMÉRA ---
-                    st.write("🎥 **Caméra**")
-                    key_ms_cam = f"mc_{s['id']}"
-                    
-                    if key_ms_cam not in st.session_state:
-                        st.session_state[key_ms_cam] = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
-                    
-                    new_cam = st.multiselect("Select Cam", data["equipe"], key=key_ms_cam, label_visibility="collapsed")
-                    
-                    if new_cam != s['elu_cam']:
-                        s['elu_cam'] = new_cam
-                        changes_casting = True
-                    
-                    cand_cam = [c for c in s['candidats_cam'] if c not in new_cam and is_compatible(c, "cam", data)]
-                    if cand_cam:
-                        st.write("**Dispo :**")
-                        cols_c = st.columns(min(len(cand_cam), 4))
-                        for i, cand in enumerate(cand_cam):
-                            if cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_cam, cand)):
-                                pass
+            active_slots = [s for s in slots_current_work if s.get('actif', True)]
+            if not active_slots: st.warning("Pas de créneaux actifs.")
+            else:
+                changes_casting = False
+                for s in active_slots:
+                    with st.expander(format_titre_slot(s) + f" - ({len(s['candidats_cam'])})", expanded=True):
+                        
+                        # --- CAMÉRA ---
+                        st.write("🎥 **Caméra**")
+                        key_ms_cam = f"mc_{s['id']}"
+                        
+                        if key_ms_cam not in st.session_state:
+                            st.session_state[key_ms_cam] = s['elu_cam'] if isinstance(s['elu_cam'], list) else []
+                        
+                        new_cam = st.multiselect("Select Cam", data["equipe"], key=key_ms_cam, label_visibility="collapsed")
+                        
+                        if new_cam != s['elu_cam']:
+                            s['elu_cam'] = new_cam
+                            changes_casting = True
+                        
+                        cand_cam = [c for c in s['candidats_cam'] if c not in new_cam and is_compatible(c, "cam", data)]
+                        if cand_cam:
+                            st.write("**Dispo :**")
+                            cols_c = st.columns(min(len(cand_cam), 4))
+                            for i, cand in enumerate(cand_cam):
+                                if cols_c[i % 4].button(f"{cand}", key=f"btn_c_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_cam, cand)):
+                                    pass
 
-                    st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
-                    
-                    # --- VOIX ---
-                    st.write("🎙️ **Voix**")
-                    key_ms_voix = f"mv_{s['id']}"
-                    
-                    if key_ms_voix not in st.session_state:
-                        st.session_state[key_ms_voix] = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
-                    
-                    new_voix = st.multiselect("Select Voix", data["equipe"], key=key_ms_voix, label_visibility="collapsed")
-                    
-                    if new_voix != s['elu_voix']:
-                        s['elu_voix'] = new_voix
-                        changes_casting = True
-                    
-                    cand_voix = [c for c in s['candidats_voix'] if c not in new_voix and is_compatible(c, "voix", data)]
-                    if cand_voix:
-                        st.write("**Dispo :**")
-                        cols_v = st.columns(min(len(cand_voix), 4))
-                        for i, cand in enumerate(cand_voix):
-                            if cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_voix, cand)):
-                                pass
-            
-            if changes_casting:
-                data["weeks"][selected_week_key] = slots_current_work
-                save_data(data)
+                        st.markdown("<hr class='compact-hr'>", unsafe_allow_html=True)
+                        
+                        # --- VOIX ---
+                        st.write("🎙️ **Voix**")
+                        key_ms_voix = f"mv_{s['id']}"
+                        
+                        if key_ms_voix not in st.session_state:
+                            st.session_state[key_ms_voix] = s['elu_voix'] if isinstance(s['elu_voix'], list) else [s['elu_voix']] if s['elu_voix'] else []
+                        
+                        new_voix = st.multiselect("Select Voix", data["equipe"], key=key_ms_voix, label_visibility="collapsed")
+                        
+                        if new_voix != s['elu_voix']:
+                            s['elu_voix'] = new_voix
+                            changes_casting = True
+                        
+                        cand_voix = [c for c in s['candidats_voix'] if c not in new_voix and is_compatible(c, "voix", data)]
+                        if cand_voix:
+                            st.write("**Dispo :**")
+                            cols_v = st.columns(min(len(cand_voix), 4))
+                            for i, cand in enumerate(cand_voix):
+                                if cols_v[i % 4].button(f"{cand}", key=f"btn_v_{s['id']}_{cand}", type="secondary", on_click=ajouter_candidat_callback, args=(key_ms_voix, cand)):
+                                    pass
+                
+                if changes_casting:
+                    data["weeks"][selected_week_key] = slots_current_work
+                    save_data(data)
 
-            st.markdown("---")
-            link_cast = generer_wa_casting(slots_current_work)
-            st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
+                st.markdown("---")
+                link_cast = generer_wa_casting(slots_current_work)
+                st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
     # --- EQUIPE ---
