@@ -142,54 +142,97 @@ def generer_wa_casting(slots):
 
 # --- CHARGEMENT ---
 data = load_data()
+
+# On initialise le gestionnaire de cookies
 cookie_manager = stx.CookieManager(key="mona_mgr")
 long_expire = datetime.now() + timedelta(days=3650)
 TIME_OPTIONS = get_time_options()
 
-# 1. LOGIN
-if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
-auth_cookie = cookie_manager.get(cookie="mona_access")
-if auth_cookie == "granted": st.session_state["authenticated"] = True
+# --- GESTION ROBUSTE DES COOKIES ---
 
+# 1. AUTHENTIFICATION (Mot de passe global)
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+# Si pas connecté en session, on regarde le cookie
+if not st.session_state["authenticated"]:
+    # On tente de lire le cookie
+    auth_cookie = cookie_manager.get(cookie="mona_access")
+    if auth_cookie == "granted":
+        st.session_state["authenticated"] = True
+        st.rerun() # On recharge pour masquer l'écran de login immédiatement
+
+# Si toujours pas authentifié, on affiche le login
 if not st.session_state["authenticated"]:
     st.title("🔒 Accès Privé")
     pwd_input = st.text_input("Mot de passe", type="password")
     if st.button("Entrer", type="primary"):
         if pwd_input == GLOBAL_PASSWORD:
+            # 1. On écrit le cookie
             cookie_manager.set("mona_access", "granted", expires_at=long_expire)
+            # 2. On met à jour la session
             st.session_state["authenticated"] = True
             st.success("Accès autorisé")
-            time.sleep(1)
+            # 3. On attend un instant que le cookie s'écrive
+            time.sleep(0.5)
             st.rerun()
-        else: st.error("Non.")
-    st.stop()
+        else:
+            st.error("Mot de passe incorrect.")
+    st.stop() # Arrête l'exécution ici si pas connecté
 
-# 2. IDENTITÉ
-if "current_user" not in st.session_state: st.session_state["current_user"] = None
-identity_cookie = cookie_manager.get(cookie="mona_whoami")
-if identity_cookie and identity_cookie in data["equipe"]: st.session_state["current_user"] = identity_cookie
+# 2. IDENTITÉ (Qui suis-je ?)
+if "current_user" not in st.session_state:
+    st.session_state["current_user"] = None
 
+# Si l'utilisateur n'est pas dans la session, on cherche son cookie
+if st.session_state["current_user"] is None:
+    identity_cookie = cookie_manager.get(cookie="mona_whoami")
+    if identity_cookie and identity_cookie in data["equipe"]:
+        st.session_state["current_user"] = identity_cookie
+        st.rerun() # Important : on recharge pour appliquer l'identité
+
+# Si toujours pas d'utilisateur, on affiche le sélecteur
 if not st.session_state["current_user"]:
     st.title("👋 Qui es-tu ?")
-    user_choice = st.selectbox("Je suis :", ["Choisir..."] + data["equipe"])
+    
+    # On ajoute une option vide par défaut pour forcer un choix actif
+    options_users = ["Choisir..."] + data["equipe"]
+    user_choice = st.selectbox("Je suis :", options_users)
+    
     if user_choice != "Choisir...":
+        # 1. On écrit le cookie
         cookie_manager.set("mona_whoami", user_choice, expires_at=long_expire)
+        # 2. On met à jour la session
         st.session_state["current_user"] = user_choice
+        st.success(f"Bienvenue {user_choice} !")
+        # 3. Petit délai et rerun
+        time.sleep(0.5)
         st.rerun()
-    st.stop()
+    st.stop() # Arrête l'exécution tant qu'on n'a pas choisi
 
 current_user = st.session_state["current_user"]
 
-# --- APP ---
+# --- SIDEBAR (Changement d'utilisateur) ---
+# Il faut aussi corriger la sidebar pour qu'elle mette à jour le cookie correctement
 st.sidebar.title("Mona Backstage")
 st.sidebar.success(f"👤 **{current_user}**")
+
 with st.sidebar.expander("Changer d'utilisateur"):
-    change_user = st.selectbox("Identité", data["equipe"], index=data["equipe"].index(current_user))
+    # On trouve l'index de l'utilisateur actuel
+    try:
+        idx_user = data["equipe"].index(current_user)
+    except ValueError:
+        idx_user = 0
+        
+    change_user = st.selectbox("Identité", data["equipe"], index=idx_user, key="sidebar_user_select")
+    
     if change_user != current_user:
+        # Mise à jour Cookie + Session + Rerun
         cookie_manager.set("mona_whoami", change_user, expires_at=long_expire)
         st.session_state["current_user"] = change_user
         time.sleep(0.5)
         st.rerun()
+
 st.sidebar.markdown("---")
 mode_view = st.sidebar.radio("Navigation", ["Artiste", "Boss"])
 
