@@ -75,22 +75,29 @@ def load_data():
         "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"],
         "roles": {} 
     }
-    if not os.path.exists(DATA_FILE): data = default_data
-    else:
-        try:
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
-                if "weeks" not in data: data["weeks"] = {}
-                if "equipe" not in data: data["equipe"] = default_data["equipe"]
-                if "roles" not in data: data["roles"] = {} 
-        except: data = default_data
+    if not os.path.exists(DATA_FILE): 
+        return default_data
     
-    if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
-    return data
+    try:
+        # AJOUT DE encoding='utf-8' EST CRUCIAL ICI
+        with open(DATA_FILE, "r", encoding='utf-8') as f:
+            data = json.load(f)
+            if "weeks" not in data: data["weeks"] = {}
+            if "equipe" not in data: data["equipe"] = default_data["equipe"]
+            if "roles" not in data: data["roles"] = {} 
+            
+        if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
+        return data
+    except Exception as e:
+        # En cas d'erreur, on l'affiche au lieu de charger du vide silencieusement
+        st.error(f"Erreur de lecture du fichier JSON : {e}")
+        return default_data
 
 def save_data(data):
     if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
-    with open(DATA_FILE, "w") as f: json.dump(data, f, default=str)
+    # AJOUT DE encoding='utf-8' et ensure_ascii=False (pour lire 'Véro' et pas 'V\u00e9ro')
+    with open(DATA_FILE, "w", encoding='utf-8') as f: 
+        json.dump(data, f, default=str, indent=4, ensure_ascii=False)
 
 def generer_structure_vide(lundi_date):
     slots = []
@@ -477,13 +484,24 @@ elif mode_view == "Boss":
             role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
             if c3.form_submit_button("Ajouter"):
                 if new:
-                    data["equipe"].append(new)
-                    r_code = "both"
-                    if "Caméra" in role: r_code = "cam"
-                    if "Voix" in role: r_code = "voix"
-                    data["roles"][new] = r_code
-                    save_data(data)
-                    st.rerun()
+                    # 1. On recharge les données fraîches du disque par sécurité
+                    fresh_data = load_data()
+                    
+                    # 2. On travaille sur fresh_data au lieu de data (qui pourrait être vieux)
+                    if new not in fresh_data["equipe"]:
+                        fresh_data["equipe"].append(new)
+                        r_code = "both"
+                        if "Caméra" in role: r_code = "cam"
+                        if "Voix" in role: r_code = "voix"
+                        fresh_data["roles"][new] = r_code
+                        
+                        # 3. On sauvegarde
+                        save_data(fresh_data)
+                        st.success(f"{new} ajouté(e) !")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.warning("Déjà dans l'équipe !")
         
         st.markdown("---")
         
