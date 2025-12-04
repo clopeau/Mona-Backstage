@@ -75,23 +75,31 @@ def load_data():
         "equipe": ["Julie", "Sarah", "Marie", "Sophie", "Laura"],
         "roles": {} 
     }
+    
     if not os.path.exists(DATA_FILE): 
         return default_data
     
     try:
-        # AJOUT DE encoding='utf-8' EST CRUCIAL ICI
+        # On lit le fichier
         with open(DATA_FILE, "r", encoding='utf-8') as f:
             data = json.load(f)
-            if "weeks" not in data: data["weeks"] = {}
-            if "equipe" not in data: data["equipe"] = default_data["equipe"]
-            if "roles" not in data: data["roles"] = {} 
             
+        # On vérifie et répare la structure si des clés manquent
+        if "weeks" not in data: data["weeks"] = {}
+        if "equipe" not in data: data["equipe"] = default_data["equipe"]
+        if "roles" not in data: data["roles"] = {} 
+        
         if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
         return data
+
+    except json.JSONDecodeError as e:
+        # CAS CRITIQUE : Le fichier existe mais est illisible (ex: syntaxe cassée)
+        st.error(f"❌ ERREUR CRITIQUE : Le fichier de données est corrompu ou mal formé.")
+        st.error(f"Détails : {e}")
+        st.stop() # ON ARRÊTE TOUT pour ne pas écraser le fichier avec du vide
     except Exception as e:
-        # En cas d'erreur, on l'affiche au lieu de charger du vide silencieusement
-        st.error(f"Erreur de lecture du fichier JSON : {e}")
-        return default_data
+        st.error(f"❌ Erreur inconnue lors de la lecture : {e}")
+        st.stop()
 
 def save_data(data):
     if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
@@ -474,7 +482,7 @@ elif mode_view == "Boss":
                 st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-    # --- EQUIPE ---
+  # --- EQUIPE --- (Dans la vue Boss)
     with t3:
         st.subheader("Gérer la Team")
         
@@ -482,17 +490,24 @@ elif mode_view == "Boss":
             c1, c2, c3 = st.columns([3, 2, 1])
             new = c1.text_input("Nom", placeholder="Nom", label_visibility="collapsed")
             role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
+            
             if c3.form_submit_button("Ajouter"):
                 if new:
-                    # 1. On recharge les données fraîches du disque par sécurité
+                    # 1. On recharge les données fraîches
                     fresh_data = load_data()
                     
-                    # 2. On travaille sur fresh_data au lieu de data (qui pourrait être vieux)
+                    # 2. SÉCURITÉ : On vérifie que le chargement n'a pas renvoyé une coquille vide par erreur
+                    # Si 'weeks' est vide alors qu'on sait qu'il devrait y avoir des données, c'est louche (sauf si c'est le tout début)
+                    # Mais le plus important est que load_data n'ait pas crashé.
+                    
                     if new not in fresh_data["equipe"]:
                         fresh_data["equipe"].append(new)
                         r_code = "both"
                         if "Caméra" in role: r_code = "cam"
                         if "Voix" in role: r_code = "voix"
+                        
+                        # Initialisation de roles si absent (sécurité)
+                        if "roles" not in fresh_data: fresh_data["roles"] = {}
                         fresh_data["roles"][new] = r_code
                         
                         # 3. On sauvegarde
@@ -502,36 +517,3 @@ elif mode_view == "Boss":
                         st.rerun()
                     else:
                         st.warning("Déjà dans l'équipe !")
-        
-        st.markdown("---")
-        
-        for i, member in enumerate(data["equipe"]):
-            with st.container(border=True):
-                c_nom, c_role, c_act = st.columns([3, 2, 1])
-                with c_nom: st.markdown(f"**{member}**")
-                with c_role:
-                    curr_role_code = data["roles"].get(member, "both")
-                    opts = ["both", "cam", "voix"]
-                    labels = ["🌟", "🎥", "🎙️"]
-                    try: idx = opts.index(curr_role_code)
-                    except: idx = 0
-                    new_role_lbl = st.selectbox("Rôle", labels, index=idx, key=f"role_{i}", label_visibility="collapsed")
-                    new_role_code = opts[labels.index(new_role_lbl)]
-                    if new_role_code != curr_role_code:
-                        data["roles"][member] = new_role_code
-                        save_data(data)
-                        st.rerun()
-                with c_act:
-                    if st.button("❌", key=f"pre_del_{i}"): st.session_state[f"confirm_del_{i}"] = True
-                
-                if st.session_state.get(f"confirm_del_{i}", False):
-                    st.write("Supprimer ?")
-                    c1, c2 = st.columns(2)
-                    if c1.button("Oui", key=f"y_{i}", type="primary", use_container_width=True):
-                        data["equipe"].pop(i)
-                        if member in data["roles"]: del data["roles"][member]
-                        save_data(data)
-                        st.rerun()
-                    if c2.button("Non", key=f"n_{i}", use_container_width=True):
-                        st.session_state[f"confirm_del_{i}"] = False
-                        st.rerun()
