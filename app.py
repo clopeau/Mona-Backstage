@@ -19,17 +19,14 @@ st.markdown("""
     div[data-testid="column"] button { width: 100% !important; }
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
     .compact-hr { margin-top: 5px !important; margin-bottom: 5px !important; border: 0; border-top: 1px solid #e0e0e0; }
-    
     span[data-baseweb="tag"] { background-color: #e8f5e9 !important; border: 1px solid #c8e6c9 !important; }
     span[data-baseweb="tag"] span { color: #2e7d32 !important; font-weight: bold; }
-
     div[data-testid="column"] button[kind="secondary"] {
         background-color: #fff3e0 !important; border: 1px solid #ffcc80 !important; color: #ef6c00 !important; font-weight: 600;
     }
     div[data-testid="column"] button[kind="secondary"]:hover {
         background-color: #ffe0b2 !important; border-color: #ef6c00 !important;
     }
-
     .wa-btn {
         text-decoration: none; background-color: #25D366; color: white !important;
         padding: 10px 20px; border-radius: 8px; display: block;
@@ -49,25 +46,24 @@ def format_titre_slot(slot):
     return f"**{slot['jour']} {slot['heure']}** ({short_date})"
 
 def is_today_or_future(slot):
-    """Vérifie si la DATE du slot est aujourd'hui ou plus tard (ignore l'heure)"""
     try:
         slot_date = datetime.strptime(slot['date'], "%d/%m/%Y").date()
         now_date = datetime.now().date()
         return slot_date >= now_date
     except: return True
 
-# --- LOGIQUE ROLES ---
 def is_compatible(member_name, target_role, data):
     user_role = data.get("roles", {}).get(member_name, "both")
     if user_role == "both": return True
     return user_role == target_role
 
-# --- CALLBACK ---
 def ajouter_candidat_callback(widget_key, candidat_nom):
     current_list = st.session_state.get(widget_key, [])
     if candidat_nom not in current_list:
         current_list.append(candidat_nom)
         st.session_state[widget_key] = current_list
+
+# --- GESTION DES DONNÉES ROBUSTE ---
 
 def load_data():
     default_data = {
@@ -76,36 +72,54 @@ def load_data():
         "roles": {} 
     }
     
+    # Si le fichier n'existe pas, on renvoie les défauts
     if not os.path.exists(DATA_FILE): 
         return default_data
     
     try:
-        # On lit le fichier
+        # LECTURE STRICTE EN UTF-8
         with open(DATA_FILE, "r", encoding='utf-8') as f:
-            data = json.load(f)
+            content = f.read()
+            # Vérification fichier vide
+            if not content.strip():
+                return default_data
+            data = json.loads(content)
             
-        # On vérifie et répare la structure si des clés manquent
+        # Initialisation des structures manquantes
         if "weeks" not in data: data["weeks"] = {}
         if "equipe" not in data: data["equipe"] = default_data["equipe"]
         if "roles" not in data: data["roles"] = {} 
         
-        if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
+        # Tri de l'équipe pour l'affichage
+        if data.get("equipe"): 
+            data["equipe"] = sorted(list(set(data["equipe"])))
+            
         return data
 
     except json.JSONDecodeError as e:
-        # CAS CRITIQUE : Le fichier existe mais est illisible (ex: syntaxe cassée)
-        st.error(f"❌ ERREUR CRITIQUE : Le fichier de données est corrompu ou mal formé.")
-        st.error(f"Détails : {e}")
-        st.stop() # ON ARRÊTE TOUT pour ne pas écraser le fichier avec du vide
+        st.error(f"❌ ERREUR JSON : Le fichier {DATA_FILE} est mal formé.")
+        st.code(str(e))
+        st.stop() # Arrêt immédiat pour ne pas écraser le fichier
+    except UnicodeDecodeError as e:
+        st.error(f"❌ ERREUR ENCODAGE : Problème d'accents dans le fichier.")
+        st.warning("Essayez d'ouvrir le json dans un éditeur et de l'enregistrer en UTF-8.")
+        st.code(str(e))
+        st.stop() # Arrêt immédiat
     except Exception as e:
-        st.error(f"❌ Erreur inconnue lors de la lecture : {e}")
-        st.stop()
+        st.error(f"❌ ERREUR INCONNUE lors du chargement des données.")
+        st.code(str(e))
+        st.stop() # Arrêt immédiat
 
 def save_data(data):
-    if data.get("equipe"): data["equipe"] = sorted(list(set(data["equipe"])))
-    # AJOUT DE encoding='utf-8' et ensure_ascii=False (pour lire 'Véro' et pas 'V\u00e9ro')
-    with open(DATA_FILE, "w", encoding='utf-8') as f: 
-        json.dump(data, f, default=str, indent=4, ensure_ascii=False)
+    if data.get("equipe"): 
+        data["equipe"] = sorted(list(set(data["equipe"])))
+        
+    try:
+        # ÉCRITURE STRICTE EN UTF-8
+        with open(DATA_FILE, "w", encoding='utf-8') as f: 
+            json.dump(data, f, default=str, indent=4, ensure_ascii=False)
+    except Exception as e:
+        st.error(f"❌ Impossible de sauvegarder : {e}")
 
 def generer_structure_vide(lundi_date):
     slots = []
