@@ -503,21 +503,33 @@ elif mode_view == "Boss":
             
             if c3.form_submit_button("Ajouter"):
                 if new:
-                    # CORRECTION MAJEURE ICI : on recharge les données avant d'ajouter
+                    # 1. On recharge les données fraîches pour ne rien écraser
                     fresh_data = load_data()
                     
                     if new not in fresh_data["equipe"]:
+                        # 2. On ajoute le membre
                         fresh_data["equipe"].append(new)
                         r_code = "both"
                         if "Caméra" in role: r_code = "cam"
                         if "Voix" in role: r_code = "voix"
                         fresh_data["roles"][new] = r_code
+                        
+                        # 3. On sauvegarde (Le fichier est BON à ce moment là)
                         save_data(fresh_data)
+                        
+                        # 4. LE FIX EST ICI : NETTOYAGE DE MÉMOIRE
+                        # On supprime la mémoire des widgets de casting.
+                        # Cela force Streamlit à relire le JSON au prochain affichage
+                        # au lieu d'utiliser une valeur vide buggée.
+                        for key in list(st.session_state.keys()):
+                            if key.startswith("mc_") or key.startswith("mv_"):
+                                del st.session_state[key]
+                        
                         st.success(f"{new} ajouté(e) !")
                         time.sleep(0.5)
                         st.rerun()
                     else:
-                        st.warning("Déjà dans l'équipe !")
+                        st.warning("Ce membre existe déjà.")
         
         st.markdown("---")
         
