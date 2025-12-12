@@ -497,37 +497,52 @@ elif mode_view == "Boss":
 
 
   # --- EQUIPE --- (Dans la vue Boss)
-    with t3:
-        st.subheader("Gérer la Team")
-        
-        with st.form("add_member", clear_on_submit=True):
-            c1, c2, c3 = st.columns([3, 2, 1])
-            new = c1.text_input("Nom", placeholder="Nom", label_visibility="collapsed")
-            role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
+ with t3:
+    st.subheader("Gérer la Team")
+    
+    with st.form("add_member", clear_on_submit=True):
+        c1, c2, c3 = st.columns([3, 2, 1])
+        new = c1.text_input("Nom", placeholder="Nom", label_visibility="collapsed")
+        role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
+        if c3.form_submit_button("Ajouter"):
+            if new:
+                data["equipe"].append(new)
+                r_code = "both"
+                if "Caméra" in role: r_code = "cam"
+                if "Voix" in role: r_code = "voix"
+                data["roles"][new] = r_code
+                save_data(data)
+                st.rerun()
+    
+    st.markdown("---")
+    
+    for i, member in enumerate(data["equipe"]):
+        with st.container(border=True):
+            c_nom, c_role, c_act = st.columns([3, 2, 1])
+            with c_nom: st.markdown(f"**{member}**")
+            with c_role:
+                curr_role_code = data["roles"].get(member, "both")
+                opts = ["both", "cam", "voix"]
+                labels = ["🌟", "🎥", "🎙️"]
+                try: idx = opts.index(curr_role_code)
+                except: idx = 0
+                new_role_lbl = st.selectbox("Rôle", labels, index=idx, key=f"role_{i}", label_visibility="collapsed")
+                new_role_code = opts[labels.index(new_role_lbl)]
+                if new_role_code != curr_role_code:
+                    data["roles"][member] = new_role_code
+                    save_data(data)
+                    st.rerun()
+            with c_act:
+                if st.button("❌", key=f"pre_del_{i}"): st.session_state[f"confirm_del_{i}"] = True
             
-            if c3.form_submit_button("Ajouter"):
-                if new:
-                    # 1. On recharge les données fraîches
-                    fresh_data = load_data()
-                    
-                    # 2. SÉCURITÉ : On vérifie que le chargement n'a pas renvoyé une coquille vide par erreur
-                    # Si 'weeks' est vide alors qu'on sait qu'il devrait y avoir des données, c'est louche (sauf si c'est le tout début)
-                    # Mais le plus important est que load_data n'ait pas crashé.
-                    
-                    if new not in fresh_data["equipe"]:
-                        fresh_data["equipe"].append(new)
-                        r_code = "both"
-                        if "Caméra" in role: r_code = "cam"
-                        if "Voix" in role: r_code = "voix"
-                        
-                        # Initialisation de roles si absent (sécurité)
-                        if "roles" not in fresh_data: fresh_data["roles"] = {}
-                        fresh_data["roles"][new] = r_code
-                        
-                        # 3. On sauvegarde
-                        save_data(fresh_data)
-                        st.success(f"{new} ajouté(e) !")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.warning("Déjà dans l'équipe !")
+            if st.session_state.get(f"confirm_del_{i}", False):
+                st.write("Supprimer ?")
+                c1, c2 = st.columns(2)
+                if c1.button("Oui", key=f"y_{i}", type="primary", use_container_width=True):
+                    data["equipe"].pop(i)
+                    if member in data["roles"]: del data["roles"][member]
+                    save_data(data)
+                    st.rerun()
+                if c2.button("Non", key=f"n_{i}", use_container_width=True):
+                    st.session_state[f"confirm_del_{i}"] = False
+                    st.rerun()
