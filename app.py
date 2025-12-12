@@ -77,8 +77,8 @@ def load_data():
         return default_data
     
     try:
-        # LECTURE STRICTE EN UTF-8
-        with open(DATA_FILE, "r", encoding='utf-8') as f:
+        # LECTURE STRICTE EN UTF-8-SIG (Gère BOM et accents)
+        with open(DATA_FILE, "r", encoding='utf-8-sig') as f:
             content = f.read()
             # Vérification fichier vide
             if not content.strip():
@@ -99,16 +99,15 @@ def load_data():
     except json.JSONDecodeError as e:
         st.error(f"❌ ERREUR JSON : Le fichier {DATA_FILE} est mal formé.")
         st.code(str(e))
-        st.stop() # Arrêt immédiat pour ne pas écraser le fichier
+        st.stop()
     except UnicodeDecodeError as e:
         st.error(f"❌ ERREUR ENCODAGE : Problème d'accents dans le fichier.")
-        st.warning("Essayez d'ouvrir le json dans un éditeur et de l'enregistrer en UTF-8.")
         st.code(str(e))
-        st.stop() # Arrêt immédiat
+        st.stop()
     except Exception as e:
         st.error(f"❌ ERREUR INCONNUE lors du chargement des données.")
         st.code(str(e))
-        st.stop() # Arrêt immédiat
+        st.stop()
 
 def save_data(data):
     if data.get("equipe"): 
@@ -242,7 +241,6 @@ if not st.session_state["current_user"]:
 current_user = st.session_state["current_user"]
 
 # --- SIDEBAR (Changement d'utilisateur) ---
-# Il faut aussi corriger la sidebar pour qu'elle mette à jour le cookie correctement
 st.sidebar.title("Mona Backstage")
 st.sidebar.success(f"👤 **{current_user}**")
 
@@ -411,7 +409,6 @@ elif mode_view == "Boss":
         col_pub, col_wa = st.columns(2)
         
         with col_pub:
-            # Bouton manuel pour forcer la publication (surtout si c'est une nouvelle semaine sans modif)
             btn_text = "💾 Publier la semaine" if not week_exists else "💾 Enregistrer"
             btn_type = "primary" if not week_exists else "secondary"
             
@@ -432,7 +429,6 @@ elif mode_view == "Boss":
 
     # --- CASTING ---
     with t2:
-        # Si la semaine n'est pas enregistrée, on avertit
         if not week_exists:
             st.warning("Cette semaine n'est pas encore publiée. Allez dans l'onglet 'Structure' pour la créer.")
         else:
@@ -496,23 +492,32 @@ elif mode_view == "Boss":
                 st.markdown(f"""<a href="{link_cast}" target="_blank" class="wa-btn">🎬 Envoyer planning final (WhatsApp)</a>""", unsafe_allow_html=True)
 
 
-  # --- EQUIPE --- (Dans la vue Boss)
-     with t3:
+    # --- EQUIPE ---
+    with t3:
         st.subheader("Gérer la Team")
         
         with st.form("add_member", clear_on_submit=True):
             c1, c2, c3 = st.columns([3, 2, 1])
             new = c1.text_input("Nom", placeholder="Nom", label_visibility="collapsed")
             role = c2.selectbox("Rôle", ["🌟 Polyvalent", "🎥 Caméra", "🎙️ Voix"], label_visibility="collapsed")
+            
             if c3.form_submit_button("Ajouter"):
                 if new:
-                    data["equipe"].append(new)
-                    r_code = "both"
-                    if "Caméra" in role: r_code = "cam"
-                    if "Voix" in role: r_code = "voix"
-                    data["roles"][new] = r_code
-                    save_data(data)
-                    st.rerun()
+                    # CORRECTION MAJEURE ICI : on recharge les données avant d'ajouter
+                    fresh_data = load_data()
+                    
+                    if new not in fresh_data["equipe"]:
+                        fresh_data["equipe"].append(new)
+                        r_code = "both"
+                        if "Caméra" in role: r_code = "cam"
+                        if "Voix" in role: r_code = "voix"
+                        fresh_data["roles"][new] = r_code
+                        save_data(fresh_data)
+                        st.success(f"{new} ajouté(e) !")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.warning("Déjà dans l'équipe !")
         
         st.markdown("---")
         
